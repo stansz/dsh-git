@@ -144,24 +144,57 @@ rather than described — `scripts/portability-check.mjs`, run in CI:
   `@deepseek-ai/schemastery`, and it is loaded through `createRequire` probes
   rather than a static import, so the plugin mounts and works without it.
 
-Install on another Harness with either:
+Install on another Harness the way this profile already installs another bundle:
 
 ```bash
-# from the repository — includes .github, so the suite runs there too
+# The profile directory is the install target, not a global prefix:
+mkdir -p ~/.dsh/profiles/<name> && cd ~/.dsh/profiles/<name>
 pnpm add github:stansz/dsh-git
 ```
 
-```yaml
-# or point a bundle at it, if you prefer an explicit row
-- insert:
-    - id: dsh-git
-      name: 'dsh-git'
+**Pin it if you want reproducibility.** An unpinned `github:` spec follows the
+default branch, so a fresh install on another machine gets whatever is newest at
+that moment. To freeze a known-good state, name the ref:
+
+```bash
+pnpm add github:stansz/dsh-git#v0.1.0
 ```
 
-Then set the guard mode and worktree root for that machine on
+Then make the profile load the bundle — one line in its own `package.json`:
+
+```json
+"dsh": { "profile": { "bundles": ["…", "dsh-git"] } }
+```
+
+`plugin_manager` with `install_bundle` does the dependency and the bundle-list
+entry together and is what to prefer when it is available. The row inside the
+package needs no editing: it names `dsh-git`, which resolves from the profile's
+`node_modules` once the dependency is installed.
+
+Finally, set that machine's guard mode and worktree root on
 Plugins → DSH Git → Configure. Nothing here is machine-specific: `git` and the
-optional `gh` are the only external tools, and authentication comes from that
-machine's own credential helper.
+optional `gh` are the only external tools, authentication comes from that
+machine's own credential helper, and every path resolves against that
+deployment's own `$DSH_HOME`.
+
+### `link:` or GitHub?
+
+Both work, and they fail in opposite directions. Worth knowing before choosing:
+
+| Install | What it tracks | Fails when |
+|---|---|---|
+| `link:<path>` | your working tree, live | the path is gone — a fresh machine cannot reproduce it, and an absolute path makes the profile non-portable |
+| `github:…` | an immutable snapshot | you edit the source and forget that the profile is no longer reading it |
+
+`link:` is right while you are changing the plugin — `link:/…/dsh-git` means the
+running Harness picks up every edit immediately, which is how this bundle was
+developed. `github:` is right for every other machine, and for keeping a machine
+reproducible. The trap is a profile that mixes them: it looks uniform and is not.
+
+The whole `dsh.*` custom-work set in this workspace uses absolute `link:` paths,
+which is recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine
+must use Git installs instead. This bundle is portable enough to be the one that
+does.
 
 **Requirements:** git on `PATH`, Node 18+ for global `fetch`, and `gh` only if
 you want the API to authenticate through it — `GH_TOKEN` works without it.
