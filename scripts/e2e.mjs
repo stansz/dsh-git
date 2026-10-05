@@ -26,7 +26,7 @@ import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
 import { resolveConfig } from '../lib/config.mjs';
-import { runTurnSync, pushDecision, messageFor } from '../lib/turn-commit.mjs';
+import { runTurnSync, pushDecision, messageFor, registerTurnSync } from '../lib/turn-commit.mjs';
 import { removeWorktree } from '../lib/worktrees.mjs';
 import { evaluate } from '../lib/guard.mjs';
 
@@ -234,6 +234,50 @@ check('the turn sync is level with the remote afterwards',
 const second = await runTurnSync({ config, cwd: worktree, turn: 8, sessionId: SESSION, readPaths: () => [] });
 const secondAuto = (second.repos ?? []).find((entry) => entry.repo === worktree);
 check('a turn that changed nothing makes no commit', secondAuto?.committed === false, JSON.stringify(secondAuto));
+
+console.log('\n--- the turn sync is wired to both boundaries, and runs once per turn ---');
+// The sync is registered on `agent/turn-stopping` and on `session/event`
+// `turn/end`, because an agent-scoped event that never reaches a plugin listener
+// fails completely silently — no error, no warning, and no commit, which is the
+// exact failure this bundle exists to remove. Whichever boundary arrives first
+// must win for that turn and the other must be a no-op; a double run would race
+// itself on the same index.
+const listeners = new Map();
+const stubCtx = {
+  on: (name, handler) => { listeners.set(name, handler); return () => {}; },
+  get: () => undefined,
+  logger: { info: () => {}, warn: () => {} },
+};
+const disposeWire = registerTurnSync(stubCtx, config);
+check('both boundaries are registered',
+  listeners.has('agent/turn-stopping') && listeners.has('session/event'),
+  [...listeners.keys()].join(', '));
+if (listeners.has('agent/turn-stopping') && listeners.has('session/event')) {
+  const wireRepo = join(root, 'wire');
+  run(root, ['clone', '-q', originDir, wireRepo]);
+  run(wireRepo, ['config', 'user.email', 'e2e@example.com']);
+  run(wireRepo, ['config', 'user.name', 'dsh-git e2e wire']);
+  writeFileSync(join(wireRepo, 'wire.txt'), 'wired\n', 'utf8');
+  const before = Number(run(wireRepo, ['rev-list', '--count', 'HEAD']).trim());
+
+  const agent = { id: 'wire-session' };
+  listeners.get('agent/turn-stopping')({ agent, turn: 42, signal: new AbortController().signal });
+  listeners.get('session/event')({ id: 'wire-session' }, { type: 'turn/end', data: { turn: 42 } });
+  await new Promise((settle) => setTimeout(settle, 3000));
+
+  const after = Number(run(wireRepo, ['rev-list', '--count', 'HEAD']).trim());
+  check('the turn sync ran exactly once for one turn',
+    after - before === 1, 'commits added: ' + String(after - before));
+
+  // A different turn must still run: deduplication is per turn, not once ever.
+  writeFileSync(join(wireRepo, 'wire2.txt'), 'wired again\n', 'utf8');
+  listeners.get('session/event')({ id: 'wire-session' }, { type: 'turn/end', data: { turn: 43 } });
+  await new Promise((settle) => setTimeout(settle, 3000));
+  const later = Number(run(wireRepo, ['rev-list', '--count', 'HEAD']).trim());
+  check('a later turn still syncs', later - before === 2, 'commits added: ' + String(later - before));
+  check('the later commit names its own turn', run(wireRepo, ['log', '-1', '--format=%s']).includes('turn 43'), run(wireRepo, ['log', '-1', '--format=%s']));
+  disposeWire();
+}
 
 console.log('\n--- a protected branch is committed but never pushed ---');
 run(workDir, ['checkout', '-q', 'main']);

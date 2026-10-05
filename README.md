@@ -126,6 +126,20 @@ git on `PATH`. `gh` is optional and only used as a token source; without it, set
 only `node:` builtins, and `@deepseek-ai/schemastery` is loaded defensively so a
 `link:` install cannot take the plugin down at activation.
 
+## How to see the automatic commit work
+
+Make any edit in a repository and end the turn. `git log` shows a commit whose
+subject starts `dsh: turn <N>` and whose body carries `Assisted-by: DSH`. On a
+protected branch the commit lands and the push is refused with a reason; on a
+`dsh/` worktree branch both happen. `git status` inside the plugin's own
+repository is the fastest check, and `/git` prints the same state in the composer.
+
+The automatic commit is deliberately not narrowed to the files a turn edited.
+Narrowing it would leave one file the turn touched and one it did not, both
+uncommitted, with no later turn likely to notice — and "nothing left
+uncommitted" is the promise this bundle exists to keep. The commit subject names
+the turn, so the result stays attributable.
+
 ## Path identity, the bug class this code keeps hitting
 
 `git` realpaths everything it reports. On macOS `/tmp` is `/private/tmp` and
