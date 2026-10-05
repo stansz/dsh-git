@@ -243,9 +243,15 @@ console.log('\n--- the turn sync is wired to both boundaries, and runs once per 
 // must win for that turn and the other must be a no-op; a double run would race
 // itself on the same index.
 const listeners = new Map();
+const wireRepo = join(root, 'wire');
 const stubCtx = {
   on: (name, handler) => { listeners.set(name, handler); return () => {}; },
-  get: () => undefined,
+  // The session's working directory is where the sync looks, so the stub has to
+  // report one. Without it `sessionCwd` falls back to the process directory and
+  // the sync finds a different repository, or none.
+  get: (name) => (name === 'sessions'
+    ? { get: () => ({ id: 'wire-session', cwd: wireRepo }) }
+    : undefined),
   logger: { info: () => {}, warn: () => {} },
 };
 const disposeWire = registerTurnSync(stubCtx, config);
@@ -253,7 +259,6 @@ check('both boundaries are registered',
   listeners.has('agent/turn-stopping') && listeners.has('session/event'),
   [...listeners.keys()].join(', '));
 if (listeners.has('agent/turn-stopping') && listeners.has('session/event')) {
-  const wireRepo = join(root, 'wire');
   run(root, ['clone', '-q', originDir, wireRepo]);
   run(wireRepo, ['config', 'user.email', 'e2e@example.com']);
   run(wireRepo, ['config', 'user.name', 'dsh-git e2e wire']);
