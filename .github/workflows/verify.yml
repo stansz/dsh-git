@@ -1,0 +1,94 @@
+name: verify
+
+# The three suites in scripts/ are the whole verification story for this bundle,
+# and they were all written to run anywhere: no network, no credentials, no
+# services. `scripts/e2e.mjs` clones a local bare repository rather than talking
+# to GitHub, so pushes, upstream tracking and ahead/behind are exercised through
+# real git and a real transport without a token in sight.
+#
+# The matrix is the point of running this at all. The verification behind this
+# bundle was done on one machine — macOS, git 2.54, /private symlinks — and the
+# failure mode this code keeps hitting is path identity, which is *exactly* what
+# differs between platforms. ubuntu has no /private prefix, so the same realpath
+# logic takes a different branch there. Once the two runners are green they stop
+# being a formality and start being the place a regression is caught.
+#
+# Deliberately absent: a build step (there is nothing to build) and a dependency
+# install (there are no dependencies). lib/*.mjs import only `node:` builtins.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Not fail-fast: a macOS-only path bug and a Linux-only git-version bug are
+      # different findings, and seeing both is worth the extra minutes.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ['20', '22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Recorded, not asserted: the suites depend on specific git behaviour
+      # (`status --porcelain=v2 --branch`, `worktree list --porcelain`, the
+      # `-z` forms), and knowing which version a red run used is the difference
+      # between a five-minute fix and an afternoon.
+      - name: Report the toolchain
+        run: |
+          node --version
+          git --version
+          echo "platform: ${{ runner.os }}"
+
+      - name: Guard classification (187 assertions)
+        run: node scripts/guard-test.mjs
+
+      # Runs this workflow's own file through scripts/workflow-check.mjs: real
+      # runner labels, every referenced script present, no step that runs
+      # nothing. A malformed workflow is the one failure the workflow itself
+      # cannot report.
+      - name: Workflow file is valid and every step does something
+        run: node scripts/workflow-check.mjs
+
+      # Before the end-to-end suite because it is fast and its failures are
+      # unambiguous: it checks that every tool result is lossless JSON and
+      # matches the declared output schema, which the Harness enforces at
+      # dispatch time. A failure here means the model would get an error instead
+      # of a result.
+      - name: Tool contract — lossless JSON and output schema
+        run: node scripts/check.mjs
+
+      - name: End-to-end — worktree, commit, push, sync, turn sync, guard
+        run: node scripts/e2e.mjs
+
+      # The bundle's own report: every patch row must resolve, and the plugin's
+      # tool definitions must satisfy the tools contract when the real tools
+      # layer executes them. A bundle that loads in the profile but cannot be
+      # installed elsewhere is a bundle that only works on the machine it was
+      # written on.
+      - name: Bundle loadability
+        run: node -e "import('./index.js').then(async (m) => { if (typeof m.apply !== 'function') throw new Error('index.js exports no apply()'); console.log('index.js loads and exports apply()'); })"
+
+      - name: No runtime dependencies
+        run: |
+          node -e "
+          const pkg = require('./package.json');
+          const deps = Object.keys(pkg.dependencies ?? {}).filter((name) => name !== '@deepseek-ai/schemastery');
+          if (deps.length > 0) throw new Error('unexpected runtime dependencies: ' + deps.join(', '));
+          console.log('only the defensively-loaded schema package is declared');
+          "

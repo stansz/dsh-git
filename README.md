@@ -16,7 +16,7 @@ ones that change the outcome:
 
 | Contribution | What it is |
 |---|---|
-| `ctx.tools.register()` | the `git` tool: `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish` |
+| `ctx.tools.register()` | the `git` tool: `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish`, `prune` |
 | `ctx.commands.register()` | `/git`, printing the same state to a human |
 | `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
 | `ctx.on('agent/turn-stopping')` | the automatic sync: at the end of every turn that changed files, commit them and push what is safe to push |
@@ -129,14 +129,42 @@ documented in `lib/guard.mjs` rather than papered over.
 ## Verify it
 
 ```bash
-node scripts/check.mjs      # every tool result is lossless JSON and matches its output schema
-node scripts/guard-test.mjs # the guard's classification table, 187 assertions
-node scripts/e2e.mjs        # the whole cycle against a throwaway repo + local bare origin
+node scripts/guard-test.mjs    # the guard's classification table — 187 assertions
+node scripts/workflow-check.mjs # this repo's CI file is valid and every step does something
+node scripts/check.mjs         # every tool result is lossless JSON and matches its output schema
+node scripts/e2e.mjs           # the whole cycle against a throwaway repo + local bare origin
 ```
 
-`e2e.mjs` needs no network and no credentials: it clones a local bare repository,
-so pushes, upstream tracking and ahead/behind are exercised through real git and
-a real transport.
+All four run in CI on every push and pull request — see
+`.github/workflows/verify.yml` — across **ubuntu and macOS** on Node 20 and 22.
+
+The matrix is the point. The verification behind this bundle was done on one
+machine: macOS, git 2.54, `/private` symlinks. And the bug class this code keeps
+hitting is path identity, which is *exactly* what differs between platforms —
+ubuntu has no `/private` prefix, so the same realpath logic takes a different
+branch there.
+
+None of the suites need the network or a credential: `e2e.mjs` clones a local
+bare repository, so pushes, upstream tracking and ahead/behind are exercised
+through real git and a real transport without a token in sight.
+
+## Cleaning up
+
+`prune` is the one action that deletes, and it is narrow on purpose. Everything
+else here refuses to remove things because a branch or worktree may be in use —
+which is right, but it left the plugin unable to tidy up after *itself*.
+
+```
+git prune              # dry run: what is left behind
+git prune apply: true  # remove it
+```
+
+It removes a worktree registration whose directory is gone, and a branch under
+`branchPrefix` that **no worktree has checked out and that holds no commit the
+base branch does not already have**. A branch with work of its own is reported
+and kept. That is the whole safety argument, and it is worth stating plainly:
+deleting a branch is what the guard denies `git branch -D` for, so this door
+opens only onto the plugin's own leftovers.
 
 ## Requirements
 

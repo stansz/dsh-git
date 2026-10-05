@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { runAction } from '../lib/actions.mjs';
 import { resolveConfig } from '../lib/config.mjs';
 import { runTurnSync, pushDecision, messageFor, registerTurnSync } from '../lib/turn-commit.mjs';
-import { removeWorktree } from '../lib/worktrees.mjs';
+import { removeWorktree, createWorktree, pruneWorktrees } from '../lib/worktrees.mjs';
 import { record, targetPath, safeSessionId } from '../lib/session-files.mjs';
 import { evaluate } from '../lib/guard.mjs';
 
@@ -383,6 +383,54 @@ check('the workspace scope still commits a dirty repository',
   (sweepRun.repos ?? []).some((entry) => entry.repo === shared && entry.committed === true),
   JSON.stringify(sweepRun.repos));
 check('the workspace scope reports itself', sweepRun.scope === 'workspace', String(sweepRun.scope));
+
+console.log('\n--- a failed creation leaves nothing behind ---');
+// `git worktree add -b` creates the branch BEFORE it populates the worktree, so a
+// failure at that point leaves a branch with no worktree. The orphan then refuses
+// the next attempt with "a branch named X already exists", which names the wrong
+// cause — and the plugin's own guard denies `git branch -D`, so unless the plugin
+// cleans up after itself the leftover is permanent.
+const leakRepo = join(root, 'leak');
+run(root, ['clone', '-q', originDir, leakRepo]);
+run(leakRepo, ['config', 'user.email', 'e2e@example.com']);
+run(leakRepo, ['config', 'user.name', 'dsh-git e2e leak']);
+const branchesOf = (dir) => run(dir, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'])
+  .split('\n').map((line) => line.trim()).filter((line) => line !== '');
+check('the repository starts with one branch', branchesOf(leakRepo).length === 1, branchesOf(leakRepo).join(', '));
+
+// `/dev/null/...` is a path git cannot create, so the add fails after the branch.
+const leaked = await createWorktree(leakRepo, {
+  worktreeRoot: '/dev/null/nope',
+  branchPrefix: 'dsh/',
+  slug: 'leaky',
+  timeoutMs: 15000,
+});
+check('creation fails when the worktree path is impossible', leaked.ok === false, JSON.stringify(leaked));
+check('the failure left no orphaned branch behind',
+  !branchesOf(leakRepo).some((name) => name.startsWith('dsh/')), branchesOf(leakRepo).join(', '));
+
+console.log('\n--- prune removes the plugin\'s own leftovers, and only those ---');
+run(leakRepo, ['branch', 'dsh/orphan']);
+const dry = await pruneWorktrees(leakRepo, { branchPrefix: 'dsh/', baseRef: 'refs/heads/main', timeoutMs: 15000 });
+check('the dry run reports the orphan', (dry.branches ?? []).some((entry) => entry.branch === 'dsh/orphan'), JSON.stringify(dry.branches));
+check('the dry run did not delete it', branchesOf(leakRepo).includes('dsh/orphan'), branchesOf(leakRepo).join(', '));
+
+const applied = await pruneWorktrees(leakRepo, { branchPrefix: 'dsh/', baseRef: 'refs/heads/main', apply: true, timeoutMs: 15000 });
+check('apply removes the orphan', !branchesOf(leakRepo).includes('dsh/orphan'), branchesOf(leakRepo).join(', '));
+check('apply reported what it removed', (applied.branches ?? []).some((entry) => entry.branch === 'dsh/orphan'), JSON.stringify(applied.branches));
+
+// The whole safety argument for that deletion: a branch holding a commit the base
+// does not have must be kept. Deleting it would be exactly the data loss the
+// guard's `git branch -D` denial exists to prevent.
+writeFileSync(join(leakRepo, 'work.txt'), 'unmerged\n', 'utf8');
+run(leakRepo, ['checkout', '-q', '-b', 'dsh/with-work']);
+run(leakRepo, ['add', '-A']);
+run(leakRepo, ['commit', '-qm', 'feat: work of its own']);
+run(leakRepo, ['checkout', '-q', 'main']);
+const kept = await pruneWorktrees(leakRepo, { branchPrefix: 'dsh/', baseRef: 'refs/heads/main', apply: true, timeoutMs: 15000 });
+check('a branch holding its own commit is kept', branchesOf(leakRepo).includes('dsh/with-work'), branchesOf(leakRepo).join(', '));
+check('the kept branch is reported as kept', (kept.branches ?? []).some((entry) => entry.branch === 'dsh/with-work' && entry.kept === true), JSON.stringify(kept.branches));
+check('a branch outside the prefix is never considered', branchesOf(leakRepo).includes('main'), branchesOf(leakRepo).join(', '));
 
 console.log('\n--- the recorder only records real edits ---');
 check('write records its target', targetPath({ name: 'write', arguments: { file_path: '/x/y.mjs' } }) === '/x/y.mjs');
