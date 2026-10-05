@@ -125,3 +125,18 @@ git on `PATH`. `gh` is optional and only used as a token source; without it, set
 `GH_TOKEN`. Node 18+ for global `fetch`. No npm dependencies — `lib/*.mjs` import
 only `node:` builtins, and `@deepseek-ai/schemastery` is loaded defensively so a
 `link:` install cannot take the plugin down at activation.
+
+## Path identity, the bug class this code keeps hitting
+
+`git` realpaths everything it reports. On macOS `/tmp` is `/private/tmp` and
+`/var/folders/...` is `/private/var/folders/...`, so the same directory has two
+spellings and a string comparison between them is always false. Four separate
+bugs here were that one class, and every one of them failed *silently* — a
+repository that looked untouched, a worktree that looked unowned, a commit that
+looked unnecessary.
+
+The rule this settled on: realpath at every boundary, and key session state on
+the **main repository root** (`git worktree list` reports it first), never on the
+directory a caller happens to be standing in — inside a worktree those differ,
+and the registry lookup then finds nothing.
+
