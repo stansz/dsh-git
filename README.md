@@ -136,13 +136,29 @@ node scripts/e2e.mjs           # the whole cycle against a throwaway repo + loca
 ```
 
 All four run in CI on every push and pull request — see
-`.github/workflows/verify.yml` — across **ubuntu and macOS** on Node 20 and 22.
+[verify.yml](.github/workflows/verify.yml) — across **ubuntu and macOS** on Node
+20 and 22, and all four jobs are green.
 
 The matrix is the point. The verification behind this bundle was done on one
 machine: macOS, git 2.54, `/private` symlinks. And the bug class this code keeps
 hitting is path identity, which is *exactly* what differs between platforms —
 ubuntu has no `/private` prefix, so the same realpath logic takes a different
-branch there.
+branch there. CI runs on git 2.55.0 against a local 2.54, which also covers the
+`--porcelain=v2` and `worktree list --porcelain` output this code parses.
+
+CI found two real defects on its first run, both of them *in the verification
+rather than the plugin*:
+
+1. One harness line used the run's global failure count for its PASS/FAIL label,
+   so a single failure printed every later line as FAIL and buried the cause.
+2. The `Config` check asserted that `@deepseek-ai/schemastery` must resolve — but
+   CI has no `node_modules`, and the plugin loads without it *by design*, because
+   a `link:` install does not hoist a bundle's dependencies. All four jobs went
+   red describing correct behaviour as a defect.
+
+Both states are now asserted: absent is a pass with the tool still registered,
+present is a pass with the schema resolved, and one job installs the dependency
+so the Configure-page path is exercised too.
 
 None of the suites need the network or a credential: `e2e.mjs` clones a local
 bare repository, so pushes, upstream tracking and ahead/behind are exercised
