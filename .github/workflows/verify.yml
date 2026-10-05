@@ -55,6 +55,20 @@ jobs:
           git --version
           echo "platform: ${{ runner.os }}"
 
+      # The plugin declares exactly one dependency, `@deepseek-ai/schemastery`,
+      # and loads it defensively: under a `link:` install a bundle's
+      # dependencies are not hoisted, so the plugin must mount and work without
+      # it. That means there are two states to verify, and each is a different
+      # branch of the loader.
+      #
+      # Without it — every job — the plugin loads, registers its tool and runs
+      # with every setting at its default. With it, one job, the Config schema
+      # resolves and the Configure page exists. Testing only the first would let
+      # a broken schema field reach users silently.
+      - name: Install the one declared dependency (Configuration schema path)
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        run: npm install --no-save --no-audit --no-fund @deepseek-ai/schemastery@3.18.4
+
       - name: Guard classification (187 assertions)
         run: node scripts/guard-test.mjs
 

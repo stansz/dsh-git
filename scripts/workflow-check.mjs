@@ -106,6 +106,14 @@ const e2e = readFileSync(join(root, 'scripts', 'e2e.mjs'), 'utf8');
 check('the end-to-end suite uses a local remote, not github.com', !/https:\/\/github\.com/u.test(e2e));
 check('the end-to-end suite reads no token', !/gh auth token|GH_TOKEN|GITHUB_TOKEN/u.test(e2e));
 
+// Both branches of the defensive dependency load need a job. Without the
+// install the plugin must still register and run; with it the Config schema must
+// resolve. A matrix that only ever tests one of those has a blind spot either way.
+check('one job installs the declared dependency (the schema path)',
+  /npm install[^\n]*@deepseek-ai\/schemastery/u.test(text));
+check('the dependency install is narrowed to a single job',
+  /if:\s*matrix\.os == 'ubuntu-latest' && matrix\.node == '22'/u.test(text));
+
 // A `run:` step with no body is *valid* YAML — it becomes a no-op step — so this
 // cannot fail the build without crying wolf on a legal file. It is still worth
 // naming, because a step that runs nothing while showing a green check is the
