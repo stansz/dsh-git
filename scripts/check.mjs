@@ -202,9 +202,15 @@ try {
       fail('/git handler threw ' + String(error?.message ?? error));
     }
     if (result !== undefined) {
+      // The label must reflect THIS assertion, not the run's total. Using the
+      // global failure count made every later line misreport as FAIL the moment
+      // an earlier one failed — which turned a single real failure into a
+      // misleading wall of red in CI, and cost a round trip to diagnose.
+      const before = failures.length;
       if (result.kind !== 'success' && result.kind !== 'error') fail('/git returned kind ' + String(result.kind));
       if (typeof result.text !== 'string' || result.text === '') fail('/git returned no text');
-      console.log((failures.length === 0 ? 'PASS ' : 'FAIL ') + '/git status → ' + String(result.text).split('\n')[0]);
+      const ok = failures.length === before;
+      console.log((ok ? 'PASS ' : 'FAIL ') + '/git status → ' + String(result.text).split('\n')[0]);
     }
   }
 
