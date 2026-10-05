@@ -72,6 +72,13 @@ jobs:
       - name: Guard classification (187 assertions)
         run: node scripts/guard-test.mjs
 
+      # Portability is a property CI can actually check better than one machine
+      # can: it asserts that the bundle follows the deployment's $DSH_HOME, bakes
+      # in no authoring-machine path, ships every file it imports, and loads with
+      # no node_modules at all.
+      - name: Portability — deployment home, no machine paths, loads bare
+        run: node scripts/portability-check.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself

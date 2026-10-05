@@ -126,13 +126,54 @@ documented in `lib/guard.mjs` rather than papered over.
 | `prDraft` | `false` | Open pull requests as drafts by default |
 | `timeoutMs` | `30000` | Per-git-command deadline |
 
+## Install it on another machine
+
+The bundle is built to install anywhere, and the portability contract is asserted
+rather than described — `scripts/portability-check.mjs`, run in CI:
+
+- **It follows the deployment's home.** `$DSH_HOME` decides, then
+  `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
+  `@deepseek-ai/dsh-home-paths` uses. A machine that moves its Harness home does
+  not get git state written to the old one.
+- **No machine path is baked in.** No absolute imports, no `file://` imports, no
+  authoring-machine home, no `app.asar` reference.
+- **Every file it imports ships.** `package.json`'s `files` allowlist is checked
+  against the actual import graph, so a published install cannot be missing a
+  module the working tree happened to have.
+- **It loads with nothing installed.** The one declared dependency is
+  `@deepseek-ai/schemastery`, and it is loaded through `createRequire` probes
+  rather than a static import, so the plugin mounts and works without it.
+
+Install on another Harness with either:
+
+```bash
+# from the repository — includes .github, so the suite runs there too
+pnpm add github:stansz/dsh-git
+```
+
+```yaml
+# or point a bundle at it, if you prefer an explicit row
+- insert:
+    - id: dsh-git
+      name: 'dsh-git'
+```
+
+Then set the guard mode and worktree root for that machine on
+Plugins → DSH Git → Configure. Nothing here is machine-specific: `git` and the
+optional `gh` are the only external tools, and authentication comes from that
+machine's own credential helper.
+
+**Requirements:** git on `PATH`, Node 18+ for global `fetch`, and `gh` only if
+you want the API to authenticate through it — `GH_TOKEN` works without it.
+
 ## Verify it
 
 ```bash
-node scripts/guard-test.mjs    # the guard's classification table — 187 assertions
-node scripts/workflow-check.mjs # this repo's CI file is valid and every step does something
-node scripts/check.mjs         # every tool result is lossless JSON and matches its output schema
-node scripts/e2e.mjs           # the whole cycle against a throwaway repo + local bare origin
+node scripts/guard-test.mjs       # the guard's classification table — 187 assertions
+node scripts/portability-check.mjs # the portability contract, 53 assertions
+node scripts/workflow-check.mjs   # this repo's CI file is valid and every step does something
+node scripts/check.mjs            # every tool result is lossless JSON and matches its schema
+node scripts/e2e.mjs              # the whole cycle against a throwaway repo + local bare origin
 ```
 
 All four run in CI on every push and pull request — see

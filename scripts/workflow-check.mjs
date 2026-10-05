@@ -91,6 +91,8 @@ for (const script of new Set(scripts)) {
 check('the workflow runs the guard suite', scripts.includes('scripts/guard-test.mjs'));
 check('the workflow runs the tool-contract check', scripts.includes('scripts/check.mjs'));
 check('the workflow runs the end-to-end suite', scripts.includes('scripts/e2e.mjs'));
+check('the workflow runs the portability check', scripts.includes('scripts/portability-check.mjs'));
+check('the workflow checks its own file', scripts.includes('scripts/workflow-check.mjs'));
 
 // The claims the workflow's own comments make about this repository. If one of
 // these stops being true the comment is misleading, and a workflow that lies
