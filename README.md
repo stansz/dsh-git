@@ -179,22 +179,38 @@ deployment's own `$DSH_HOME`.
 
 ### `link:` or GitHub?
 
-Both work, and they fail in opposite directions. Worth knowing before choosing:
+They fail in opposite directions, and the failure has the same symptom — "my edit
+did nothing" — which is why this is worth deciding once rather than
+rediscovering on each machine:
 
-| Install | What it tracks | Fails when |
-|---|---|---|
-| `link:<path>` | your working tree, live | the path is gone — a fresh machine cannot reproduce it, and an absolute path makes the profile non-portable |
-| `github:…` | an immutable snapshot | you edit the source and forget that the profile is no longer reading it |
+| Install | Reads the code from | A source edit takes effect | Fails when |
+|---|---|---|---|
+| `link:<path>` | your working tree | on plugin reload or Harness restart | the path is gone — a fresh machine cannot reproduce it, and an absolute path makes the profile non-portable |
+| `github:…` | the profile's `node_modules`, a frozen copy | **never** — not on reload, not on restart | you edit the checkout and forget the profile is reading a copy from somewhere else |
 
-`link:` is right while you are changing the plugin — `link:/…/dsh-git` means the
-running Harness picks up every edit immediately, which is how this bundle was
-developed. `github:` is right for every other machine, and for keeping a machine
-reproducible. The trap is a profile that mixes them: it looks uniform and is not.
+**Use `link:` for development.** It is the only install where editing the source
+does anything at all. A `github:` install writes a copy into the profile's
+`node_modules`, and no amount of restarting makes that copy follow your editor —
+it keeps whatever the last install resolved.
 
-The whole `dsh.*` custom-work set in this workspace uses absolute `link:` paths,
-which is recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine
-must use Git installs instead. This bundle is portable enough to be the one that
-does.
+**Use `github:` for every other machine.** There is nothing to edit there, and a
+pinned ref (`#v0.1.0`) is the only version of "this is what I tested" that a second
+machine can reproduce.
+
+The trap is a profile that mixes them, because it looks uniform and is not: one
+`link:` bundle updates when you edit it and the next quietly does not. If you
+edit a bundle and a restart shows no change, check how that bundle is installed
+before looking for a bug in the code.
+
+Neither install reloads a changed module by itself — the running Host keeps the
+module it loaded. Restarting the Harness is the reliable way to see an edit; the
+expensive mistake is to edit, see no change, and go hunting for a defect that is
+not there.
+
+The entire `dsh.*` custom-work set in this workspace uses absolute `link:` paths,
+recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine must use
+Git installs instead. That trap is about *deployment*. It is not an argument
+against `link:` while you are the one doing the developing.
 
 **Requirements:** git on `PATH`, Node 18+ for global `fetch`, and `gh` only if
 you want the API to authenticate through it — `GH_TOKEN` works without it.
