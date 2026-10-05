@@ -1,0 +1,127 @@
+# dsh-git
+
+One consistent way for DSH to use git and GitHub, and the automation that makes
+"nothing was left uncommitted" true without a model remembering it.
+
+## Why this exists
+
+DSH had no git tool. Every session reached git through `bash`, invented its own
+incantation, and stopped wherever it happened to stop. The residue was dirty
+working trees and unpushed commits that nothing reported, because nothing was
+looking.
+
+Supplying better commands does not fix that — a command nobody runs is the
+original bug. So this bundle contributes four things, and the last two are the
+ones that change the outcome:
+
+| Contribution | What it is |
+|---|---|
+| `ctx.tools.register()` | the `git` tool: `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish` |
+| `ctx.commands.register()` | `/git`, printing the same state to a human |
+| `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
+| `ctx.on('agent/turn-stopping')` | the automatic sync: at the end of every turn that changed files, commit them and push what is safe to push |
+
+## The two automatic behaviours
+
+**Turn commit.** At the end of every turn that changed a file, each touched
+repository is committed. Which repositories were touched comes from the shipped
+`@deepseek-ai/dsh-workspace-changes` recorder, which already tracks exactly that
+— so a turn that edited one repository never commits another one, however dirty
+that other repository happens to be.
+
+When the recorder's list is unavailable, the fallback is a bounded scan for
+repositories with something to commit. That fallback is deliberately the blunt
+instrument: the first promise here is that no work is left uncommitted, and it
+outranks the preference for committing only what the turn touched.
+
+**Turn push.** The commit is then pushed, but only when the branch is one that is
+safe to push: a task branch under `branchPrefix`, or the branch of a worktree
+this session owns. `main` and `master` are never pushed automatically. A commit
+made in a throwaway worktree that is never pushed is work that gets deleted with
+the worktree, so for those branches pushing is not a convenience.
+
+What is never done: pushing a protected branch, committing during a merge,
+rebase or cherry-pick, or committing more paths than `turnCommitMaxFiles`.
+
+## Worktrees
+
+One task, one worktree, at `~/.dsh/worktrees/<repo>/<slug>` on branch
+`dsh/<slug>` cut from `origin/<base>`. Outside every repository on purpose:
+nothing to add to `.gitignore`, and no second copy of the tree for editors and
+watchers to index and for test globs to match twice.
+
+- The worktree is locked while a session owns it.
+- A branch checked out more than once is refused, never forced.
+- Removal never uses `--force` on its own and never `rm -rf`. A dirty worktree
+  is refused with the uncommitted paths named, and the lock goes back on.
+- A worktree this plugin did not create is never touched.
+- `finish --cleanup` closes the worktree only after committing what was in it.
+
+## Authentication
+
+Nothing is stored here. `git` runs with `HOME` and `PATH` preserved, so the
+machine's own credential helper resolves credentials — on this machine that is
+`osxkeychain` from the system gitconfig. GitHub API calls use
+`GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
+never logged, never written to disk, and redacted from every error.
+
+GitHub is talked to over REST rather than through `gh`, because structured
+status codes beat matching error prose — and because
+[`gh pr merge --delete-branch`](https://github.com/cli/cli/issues/14537) does
+local branch cleanup in the *current* directory's repository, matching the branch
+by name only, which can delete an unrelated worktree's unpushed commits.
+
+## The guard
+
+Raw `git` in `bash` is classified three ways. Detection is **best-effort, not a
+security boundary** — an obfuscated command can still get through, and that is
+documented in `lib/guard.mjs` rather than papered over.
+
+| Class | Decision |
+|---|---|
+| read-only (`status`, `diff`, `log`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow |
+| mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | ask, with a reason naming the action to use instead |
+| destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
+
+`deny` outranks `ask` anywhere in one command line. `guardMode: off` disables it,
+`warn` classifies without blocking.
+
+## Settings
+
+| Field | Default | Meaning |
+|---|---|---|
+| `worktreeRoot` | `~/.dsh/worktrees` | Where per-task worktrees live |
+| `stateRoot` | `~/.dsh/state` | Where session ownership and push backoff are recorded |
+| `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push |
+| `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
+| `protectedBranches` | `[main, master]` | Never pushed automatically |
+| `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
+| `guardTools` | `[bash]` | Which tools the guard inspects |
+| `autoWorktree` | `protected` | `off` \| `protected` \| `always` |
+| `turnCommit` | `true` | Commit each turn's changes |
+| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
+| `turnPush` | `true` | Push each turn when the branch is safe |
+| `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
+| `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync |
+| `githubHost` | `github.com` | Set for GitHub Enterprise |
+| `prDraft` | `false` | Open pull requests as drafts by default |
+| `timeoutMs` | `30000` | Per-git-command deadline |
+
+## Verify it
+
+```bash
+node scripts/check.mjs      # every tool result is lossless JSON and matches its output schema
+node scripts/guard-test.mjs # the guard's classification table, 187 assertions
+node scripts/e2e.mjs        # the whole cycle against a throwaway repo + local bare origin
+```
+
+`e2e.mjs` needs no network and no credentials: it clones a local bare repository,
+so pushes, upstream tracking and ahead/behind are exercised through real git and
+a real transport.
+
+## Requirements
+
+git on `PATH`. `gh` is optional and only used as a token source; without it, set
+`GH_TOKEN`. Node 18+ for global `fetch`. No npm dependencies — `lib/*.mjs` import
+only `node:` builtins, and `@deepseek-ai/schemastery` is loaded defensively so a
+`link:` install cannot take the plugin down at activation.

@@ -1,0 +1,20 @@
+# Bundle patch for dsh-git.
+#
+# One inserted row. It mounts this package's Host half, which contributes:
+#
+#   ctx.tools.register()          -> the `git` tool (status, start, commit,
+#                                    push, sync, pr, merge, finish)
+#   ctx.commands.register()       -> /git
+#   ctx.on('tools/pre-execute')   -> the redirect guard for raw git in bash
+#   ctx.on('agent/turn-stopping') -> commit and push each turn's changes
+#
+# The row id is unique to this bundle, so nothing shipped is overridden and no
+# base row's config has to be restated. Delete this entry to remove every
+# contribution at once.
+#
+# Nothing here needs a config block: every field has a default. Configure it on
+# Plugins -> DSH Git -> Configure, or by overriding this row in the profile's
+# own patch layer, which survives Harness upgrades.
+- insert:
+    - id: dsh-git
+      name: 'dsh-git'
