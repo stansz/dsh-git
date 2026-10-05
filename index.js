@@ -34,6 +34,9 @@ import { runAction } from './lib/actions.mjs';
 import { evaluate } from './lib/guard.mjs';
 import { render, summarize } from './lib/render.mjs';
 import { registerTurnSync } from './lib/turn-commit.mjs';
+import { registerSessionFiles } from './lib/session-files.mjs';
+import { toplevel } from './lib/git.mjs';
+import { isAbsolute, resolve as resolvePath } from 'node:path';
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'git';
@@ -119,6 +122,28 @@ export function apply(ctx, config) {
 
   registerGuard(ctx, config);
   registerTurnSync(ctx, config);
+
+  // Record which files this session changes, so the turn-end commit knows which
+  // repositories are its own. Without this the turn end has to guess, and the
+  // only guess available — every dirty repository under the working directory —
+  // commits a teammate session's work in progress under this session's turn
+  // number once several sessions share a checkout.
+  registerSessionFiles(ctx, resolveConfig(config), async (path, { agent }) => {
+    const cwd = (() => {
+      try {
+        const session = ctx.get?.('sessions')?.get?.(agent?.id);
+        const value = session?.cwd ?? session?.meta?.cwd;
+        if (typeof value === 'string' && value !== '') return value;
+      } catch {
+        /* fall through */
+      }
+      return process.cwd();
+    })();
+    const absolute = isAbsolute(path) ? path : resolvePath(cwd, path);
+    const repoRoot = await toplevel(absolute);
+    if (repoRoot === undefined) return undefined;
+    return { repoRoot, path: absolute };
+  });
 }
 
 /** The directory a composer invocation is about: the agent's session, else the process. */

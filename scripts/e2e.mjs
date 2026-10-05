@@ -28,6 +28,7 @@ import { runAction } from '../lib/actions.mjs';
 import { resolveConfig } from '../lib/config.mjs';
 import { runTurnSync, pushDecision, messageFor, registerTurnSync } from '../lib/turn-commit.mjs';
 import { removeWorktree } from '../lib/worktrees.mjs';
+import { record, targetPath, safeSessionId } from '../lib/session-files.mjs';
 import { evaluate } from '../lib/guard.mjs';
 
 const SESSION = 'e2e-session';
@@ -263,6 +264,10 @@ if (listeners.has('agent/turn-stopping') && listeners.has('session/event')) {
   run(wireRepo, ['config', 'user.email', 'e2e@example.com']);
   run(wireRepo, ['config', 'user.name', 'dsh-git e2e wire']);
   writeFileSync(join(wireRepo, 'wire.txt'), 'wired\n', 'utf8');
+  // The session's own record is what makes the repository its to commit. In a
+  // live Host the tools layer writes this when the edit is dispatched; here it
+  // is written directly, which is the same fact arriving by a shorter road.
+  record('wire-session', wireRepo, join(wireRepo, 'wire.txt'), { stateRoot: config.stateRoot });
   const before = Number(run(wireRepo, ['rev-list', '--count', 'HEAD']).trim());
 
   const agent = { id: 'wire-session' };
@@ -276,6 +281,7 @@ if (listeners.has('agent/turn-stopping') && listeners.has('session/event')) {
 
   // A different turn must still run: deduplication is per turn, not once ever.
   writeFileSync(join(wireRepo, 'wire2.txt'), 'wired again\n', 'utf8');
+  record('wire-session', wireRepo, join(wireRepo, 'wire2.txt'), { stateRoot: config.stateRoot });
   listeners.get('session/event')({ id: 'wire-session' }, { type: 'turn/end', data: { turn: 43 } });
   await new Promise((settle) => setTimeout(settle, 3000));
   const later = Number(run(wireRepo, ['rev-list', '--count', 'HEAD']).trim());
@@ -294,6 +300,99 @@ check('the turn sync did not push main', onMain?.pushed !== true, JSON.stringify
 check('it said why main was not pushed', (onMain?.notes ?? []).some((note) => note.includes('protected')), JSON.stringify(onMain?.notes));
 const decision = pushDecision(config, 'main', []);
 check('pushDecision refuses a protected branch', decision.allowed === false, JSON.stringify(decision));
+
+console.log('\n--- one session never commits another session\'s work (the Agent Team case) ---');
+// Several sessions sharing a checkout is what an Agent Team is. The old fallback
+// committed every dirty repository under the working directory, which meant a
+// lead's turn end swept up a teammate's half-finished edits under the lead's
+// turn number. These assertions are the reason the session record exists.
+const shared = join(root, 'shared');
+run(root, ['clone', '-q', originDir, shared]);
+run(shared, ['config', 'user.email', 'e2e@example.com']);
+run(shared, ['config', 'user.name', 'dsh-git e2e shared']);
+
+/** Both sessions share the checkout but keep separate records. */
+const coordinator = { stateRoot, cwd: shared };
+const teammate = { stateRoot: join(root, 'state-b'), cwd: shared };
+const countCommits = () => Number(run(shared, ['rev-list', '--count', 'HEAD']).trim());
+
+// The teammate edits a file. Only the teammate's record knows about it.
+const teammateFile = join(shared, 'teammate-work.txt');
+writeFileSync(teammateFile, 'half finished\n', 'utf8');
+record('session-teammate', shared, teammateFile, { stateRoot: teammate.stateRoot });
+
+// The coordinator's turn ends. It changed nothing in this repository, so it must
+// commit nothing — the dirty tree belongs to the teammate.
+const beforeCoordinator = countCommits();
+const coordinatorRun = await runTurnSync({
+  config: resolveConfig({ worktreeRoot, stateRoot: coordinator.stateRoot }),
+  cwd: shared,
+  turn: 100,
+  sessionId: 'session-coordinator',
+  readPaths: () => undefined,
+});
+check('the coordinator committed nothing in a repository only the teammate touched',
+  countCommits() === beforeCoordinator,
+  'commits added: ' + String(countCommits() - beforeCoordinator));
+check('the coordinator reported no repository of its own',
+  (coordinatorRun.repos ?? []).length === 0,
+  JSON.stringify(coordinatorRun.repos?.map((entry) => entry.repo)));
+check('the teammate\'s file is still uncommitted after the coordinator\'s turn',
+  run(shared, ['status', '--porcelain']).includes('teammate-work.txt'),
+  run(shared, ['status', '--porcelain']));
+
+// Now the teammate's own turn ends, and it does commit its work.
+const teammateRun = await runTurnSync({
+  config: resolveConfig({ worktreeRoot, stateRoot: teammate.stateRoot, turnSyncScope: 'session' }),
+  cwd: shared,
+  turn: 101,
+  sessionId: 'session-teammate',
+  readPaths: () => undefined,
+});
+const teammateResult = (teammateRun.repos ?? []).find((entry) => entry.repo === shared);
+check('the teammate committed its own work', teammateResult?.committed === true, JSON.stringify(teammateResult?.notes));
+check('the shared tree is clean once its owner has committed',
+  run(shared, ['status', '--porcelain']).trim() === '', run(shared, ['status', '--porcelain']));
+check('the commit names the teammate\'s file',
+  run(shared, ['log', '-1', '--format=%s']).includes('teammate-work.txt'), run(shared, ['log', '-1', '--format=%s']));
+
+console.log('\n--- the scan is still available, and still reports what it does not touch ---');
+// `workspace` restores the old behaviour for a single session working alone.
+// It is opt-in because it cannot tell whose work is whose.
+writeFileSync(join(shared, 'unnamed.txt'), 'nobody recorded this\n', 'utf8');
+const unnamedRun = await runTurnSync({
+  config: resolveConfig({ worktreeRoot, stateRoot: join(root, 'state-c') }),
+  cwd: shared,
+  turn: 102,
+  sessionId: 'session-nobody',
+  readPaths: () => undefined,
+});
+check('the default scope leaves an unrecorded repository alone',
+  (unnamedRun.repos ?? []).length === 0, JSON.stringify(unnamedRun.repos?.map((entry) => entry.repo)));
+check('the default scope is reported in the result', unnamedRun.scope === 'session', String(unnamedRun.scope));
+check('the unrecorded file is still uncommitted', run(shared, ['status', '--porcelain']).includes('unnamed.txt'));
+
+const sweepRun = await runTurnSync({
+  config: resolveConfig({ worktreeRoot, stateRoot: join(root, 'state-c'), turnSyncScope: 'workspace' }),
+  cwd: shared,
+  turn: 103,
+  sessionId: 'session-nobody',
+  readPaths: () => undefined,
+});
+check('the workspace scope still commits a dirty repository',
+  (sweepRun.repos ?? []).some((entry) => entry.repo === shared && entry.committed === true),
+  JSON.stringify(sweepRun.repos));
+check('the workspace scope reports itself', sweepRun.scope === 'workspace', String(sweepRun.scope));
+
+console.log('\n--- the recorder only records real edits ---');
+check('write records its target', targetPath({ name: 'write', arguments: { file_path: '/x/y.mjs' } }) === '/x/y.mjs');
+check('edit records its target', targetPath({ name: 'edit', arguments: { file_path: '/x/y.mjs' } }) === '/x/y.mjs');
+check('bash is not a file edit', targetPath({ name: 'bash', arguments: { command: 'echo hi > /x/y.mjs' } }) === undefined);
+check('read is not a file edit', targetPath({ name: 'read', arguments: { file_path: '/x/y.mjs' } }) === undefined);
+check('a malformed call is not an edit', targetPath({ name: 'write', arguments: null }) === undefined);
+check('a path-less write is not an edit', targetPath({ name: 'write', arguments: {} }) === undefined);
+check('a session id cannot escape the store',
+  !safeSessionId('../../etc/passwd').includes('/'), safeSessionId('../../etc/passwd'));
 
 console.log('\n--- the original worktree can be closed out ---');
 writeFileSync(join(worktree, 'unfinished.txt'), 'not ready\n', 'utf8');

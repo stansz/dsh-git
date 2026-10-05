@@ -24,15 +24,33 @@ ones that change the outcome:
 ## The two automatic behaviours
 
 **Turn commit.** At the end of every turn that changed a file, each touched
-repository is committed. Which repositories were touched comes from the shipped
-`@deepseek-ai/dsh-workspace-changes` recorder, which already tracks exactly that
-— so a turn that edited one repository never commits another one, however dirty
-that other repository happens to be.
+repository is committed. *Which* repositories were touched is decided in three
+steps, and the order matters:
 
-When the recorder's list is unavailable, the fallback is a bounded scan for
-repositories with something to commit. That fallback is deliberately the blunt
-instrument: the first promise here is that no work is left uncommitted, and it
-outranks the preference for committing only what the turn touched.
+1. the shipped `@deepseek-ai/dsh-workspace-changes` recorder's file list for that
+   turn, reconciled to repositories;
+2. this session's own touched-path record, which the tools layer writes on every
+   mutating file operation;
+3. a scan for dirty repositories — **only** when `turnSyncScope: 'workspace'`.
+
+A worktree this session owns is always in scope.
+
+The default is `turnSyncScope: 'session'`, and that choice is about more than
+tidiness. Step 3 cannot tell whose work is whose. Once several sessions share a
+checkout — which is what an Agent Team is — "every dirty repository under the
+working directory" means the coordinator's turn end commits a teammate's
+half-finished edits under the coordinator's turn number. Nothing is lost, but the
+attribution is wrong and the commits are not the ones anybody asked for.
+
+So a repository this session never touched is left alone. It is not silently
+ignored: the turn result names what was in scope, and `status` keeps reporting
+the rest. Set `turnSyncScope: 'workspace'` for a single session working alone and
+you get the old, wider behaviour back.
+
+Within a repository the session has established as its own, everything dirty is
+committed. Narrowing that to the files the turn edited would leave one file the
+turn touched and one it did not, both uncommitted, with no later turn likely to
+notice either.
 
 **Turn push.** The commit is then pushed, but only when the branch is one that is
 safe to push: a task branch under `branchPrefix`, or the branch of a worktree
@@ -101,6 +119,7 @@ documented in `lib/guard.mjs` rather than papered over.
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
 | `turnPush` | `true` | Push each turn when the branch is safe |
+| `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
 | `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync |
 | `githubHost` | `github.com` | Set for GitHub Enterprise |
@@ -139,6 +158,32 @@ Narrowing it would leave one file the turn touched and one it did not, both
 uncommitted, with no later turn likely to notice — and "nothing left
 uncommitted" is the promise this bundle exists to keep. The commit subject names
 the turn, so the result stays attributable.
+
+## Running several sessions at once
+
+Agent Teams puts several sessions in one filesystem, and this plugin is designed
+for that rather than around it.
+
+**Give each teammate its own worktree.** Because the session registry is keyed by
+session id, each teammate gets its own automatically:
+
+1. the coordinator calls `git start` with a per-teammate slug;
+2. the task description carries the worktree's absolute path as the write scope;
+3. each teammate works, commits and pushes its own `dsh/<slug>` branch;
+4. integration becomes a real pull-request merge.
+
+Isolation is what makes this safe: a teammate's tree is invisible to everyone
+else's turn sync, so there is nothing for another session to sweep up. That is
+more deterministic than the shared-filesystem model Agent Teams otherwise
+assumes, not less.
+
+Nothing breaks if you skip that step either, because of `turnSyncScope: 'session'`
+— a teammate's uncommitted work in the shared checkout is simply not committed by
+anyone else, and `status` reports it until its owner commits it.
+
+**The guard asks before mutating git in `bash`.** A team hits that often. Set
+`guardMode: 'warn'` while running a team to drop the prompts and keep the
+destructive denials.
 
 ## Path identity, the bug class this code keeps hitting
 
