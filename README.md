@@ -114,14 +114,14 @@ documented in `lib/guard.mjs` rather than papered over.
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
 | `protectedBranches` | `[main, master]` | Never pushed automatically |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
-| `guardTools` | `[bash]` | Which tools the guard inspects |
+| `guardTools` | `[bash, pwsh, shell, terminal]` | Which tools the guard inspects. Every shell tool the Harness can dispatch, because a guard covering only one is a documented way around it |
 | `autoWorktree` | `protected` | `off` \| `protected` \| `always` |
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
 | `turnPush` | `true` | Push each turn when the branch is safe |
 | `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
-| `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync |
+| `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync. A sync that runs out of time is reported, not silent |
 | `githubHost` | `github.com` | Set for GitHub Enterprise |
 | `prDraft` | `false` | Open pull requests as drafts by default |
 | `timeoutMs` | `30000` | Per-git-command deadline |
@@ -253,6 +253,58 @@ so the Configure-page path is exercised too.
 None of the suites need the network or a credential: `e2e.mjs` clones a local
 bare repository, so pushes, upstream tracking and ahead/behind are exercised
 through real git and a real transport without a token in sight.
+
+## When the automatic sync cannot finish
+
+The turn sync is built so that declining to commit is never quiet. A skip, a
+refused push, a timeout and an unexpected failure all produce a message the
+**model** reads — not only a Host log line:
+
+```
+dsh-git could not finish syncing your working tree:
+  - dsh-git: skipped the automatic commit: 340 changed paths, above the limit of 200
+Run the git tool with action "status" to see the current state, and action
+"commit" or action "push" to finish the work by hand.
+```
+
+Reaching the model takes two steps, and both are deliberate: `agent.inject()`
+puts the text in its context, but does **not** wake it, so `agent.followup()` then
+starts the turn that reads it. Injection alone would leave the note waiting in
+the inbox until the user happened to say something, which is indistinguishable
+from never sending it.
+
+A *successful* sync announces nothing. Saying "committed and pushed" every turn
+is noise, and noise is how a real message gets skipped.
+
+## Git hooks
+
+The plugin commits through ordinary `git commit` and does **not** pass
+`--no-verify`, so every hook that repository has installed runs on automatic
+commits too — `pre-commit`, `commit-msg`, `post-commit`, and a global
+`core.hooksPath`, if one is set.
+
+That matters most for `post-commit`, because it runs *after* the commit exists
+and can do anything. This workspace already has one that is executable:
+
+```
+dsh-brave-search/.git/hooks/post-commit:
+    #!/bin/sh
+    git push origin HEAD
+```
+
+A hook like that pushes on every commit, **including automatic turn commits**, and
+it bypasses everything in this plugin's push path. A global `core.hooksPath`
+pointing at that same hook would put it in every repository at once.
+
+The specific hazard: `action "push"` refuses a protected branch, but a
+`post-commit` hook that pushes `HEAD` does not know what branch it is on. A hook
+like the one above, installed globally, pushes `main` on every automatic commit —
+exactly the outcome the protected-branch rule exists to prevent. If you install a
+global `core.hooksPath`, check what its `post-commit` does first.
+
+Hooks are also deliberately allowed to fail the commit. When one does, the sync
+reports it like any other skip rather than working around it: a hook that rejects
+a commit is a policy, and stepping over it silently would be worse.
 
 ## Cleaning up
 

@@ -26,7 +26,7 @@ import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
 import { resolveConfig } from '../lib/config.mjs';
-import { runTurnSync, pushDecision, messageFor, registerTurnSync } from '../lib/turn-commit.mjs';
+import { runTurnSync, pushDecision, messageFor, registerTurnSync, needsAttention, attentionText } from '../lib/turn-commit.mjs';
 import { removeWorktree, createWorktree, pruneWorktrees } from '../lib/worktrees.mjs';
 import { record, targetPath, safeSessionId } from '../lib/session-files.mjs';
 import { evaluate } from '../lib/guard.mjs';
@@ -431,6 +431,71 @@ const kept = await pruneWorktrees(leakRepo, { branchPrefix: 'dsh/', baseRef: 're
 check('a branch holding its own commit is kept', branchesOf(leakRepo).includes('dsh/with-work'), branchesOf(leakRepo).join(', '));
 check('the kept branch is reported as kept', (kept.branches ?? []).some((entry) => entry.branch === 'dsh/with-work' && entry.kept === true), JSON.stringify(kept.branches));
 check('a branch outside the prefix is never considered', branchesOf(leakRepo).includes('main'), branchesOf(leakRepo).join(', '));
+
+console.log('\n--- a skipped commit reaches the model, not just the log ---');
+// The safeguard that skips a large commit is exactly the failure this plugin
+// exists to prevent, so it cannot be a log line only: nothing on the model-facing
+// side would ever say the work is still uncommitted.
+check('a clean sync needs no announcement',
+  needsAttention({ repos: [{ repo: '/x', committed: true, pushed: true, notes: [] }] }) === false);
+check('a skipped commit needs one',
+  needsAttention({ repos: [{ repo: '/x', committed: false, pushed: false, notes: ['skipped the automatic commit: 300 changed paths, above the limit of 200'] }] }) === true);
+check('a rejected push needs one',
+  needsAttention({ repos: [{ repo: '/x', committed: true, pushed: false, notes: ['push failed: non-fast-forward'] }] }) === true);
+check('an empty result needs none', needsAttention({ repos: [] }) === false);
+const announcement = attentionText({ repos: [{ repo: '/repo/dsh-git', notes: ['skipped the automatic commit: 300 changed paths'] }] });
+check('the announcement names the repository', announcement.includes('dsh-git'), announcement);
+check('the announcement repeats the reason', announcement.includes('300 changed paths'), announcement);
+check('the announcement says what to do next', announcement.includes('action \"status\"'), announcement);
+
+// The skip is reachable end to end: a repository with more changed paths than the
+// limit must report rather than commit, and the report must be an announcement.
+const bigRepo = join(root, 'big');
+run(root, ['clone', '-q', originDir, bigRepo]);
+run(bigRepo, ['config', 'user.email', 'e2e@example.com']);
+run(bigRepo, ['config', 'user.name', 'dsh-git e2e big']);
+for (let index = 0; index < 6; index += 1) writeFileSync(join(bigRepo, 'f' + String(index) + '.txt'), 'x\n', 'utf8');
+record('session-big', bigRepo, join(bigRepo, 'f0.txt'), { stateRoot: config.stateRoot });
+const overLimit = await runTurnSync({
+  config: resolveConfig({ worktreeRoot, stateRoot: config.stateRoot, turnCommitMaxFiles: 3 }),
+  cwd: bigRepo,
+  turn: 200,
+  sessionId: 'session-big',
+  readPaths: () => undefined,
+});
+const bigResult = (overLimit.repos ?? []).find((entry) => entry.repo === bigRepo);
+check('an oversized turn does not commit', bigResult?.committed === false, JSON.stringify(bigResult));
+check('it says the limit was the reason', (bigResult?.notes ?? []).some((note) => note.includes('above the limit')), JSON.stringify(bigResult?.notes));
+check('and that result is announced to the model', needsAttention(overLimit) === true);
+
+console.log('\n--- a timed-out sync is announced too ---');
+// The abort signal is the sync's own deadline. A cancelled repo must say so
+// rather than look like a quiet no-op.
+// The elapsed deadline is what aborts the per-repository loop, so the signal has
+// to expire while there is still work queued. A one-millisecond budget with a
+// repository ahead of it reaches that state; a pre-aborted signal does not,
+// because discovery answers "nothing to do" before the loop is entered.
+const timedOut = await runTurnSync({
+  // The same state root the record was written to: the session's touched-file
+  // record is how the sync knows this repository is its own, so pointing the two
+  // at different roots tests an empty sync instead of the timeout path.
+  config: resolveConfig({ worktreeRoot, stateRoot: config.stateRoot, turnSyncTimeoutMs: 1, turnCommitMaxFiles: 3 }),
+  cwd: bigRepo,
+  turn: 201,
+  sessionId: 'session-big',
+  readPaths: () => undefined,
+});
+check('a timed-out sync still reported the repository', (timedOut.repos ?? []).length > 0, JSON.stringify(timedOut.repos));
+check('and its notes are announced', needsAttention(timedOut) === true, JSON.stringify(timedOut.repos));
+
+console.log('\n--- the guard covers every shell tool, not only bash ---');
+const guardConfig = resolveConfig({});
+for (const tool of ['bash', 'pwsh', 'shell', 'terminal']) {
+  const decision = evaluate({ name: tool, arguments: { command: 'git push --force' }, signal: new AbortController().signal }, guardConfig);
+  check('a destructive git command via ' + tool + ' is denied', decision.kind === 'deny', decision.kind);
+}
+const untouched = evaluate({ name: 'read', arguments: { file_path: '/x' }, signal: new AbortController().signal }, guardConfig);
+check('a non-shell tool is still not guarded', untouched.kind === 'allow', untouched.kind);
 
 console.log('\n--- the recorder only records real edits ---');
 check('write records its target', targetPath({ name: 'write', arguments: { file_path: '/x/y.mjs' } }) === '/x/y.mjs');
