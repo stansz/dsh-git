@@ -46,7 +46,7 @@ import { isAbsolute, resolve as resolvePath } from 'node:path';
 export const name = 'git';
 
 /** The services this plugin contributes to. */
-export const inject = ['tools', 'commands'];
+export const inject = ['tools', 'commands', 'sessions'];
 
 /** Settings, set by overriding this bundle's row in the profile's patch layer. */
 export const Config = buildConfig();
@@ -141,7 +141,7 @@ export function apply(ctx, config) {
     const cwd = (() => {
       try {
         const session = ctx.get?.('sessions')?.get?.(agent?.id);
-        const value = session?.cwd ?? session?.meta?.cwd;
+        const value = session?.header?.cwd ?? session?.cwd ?? session?.meta?.cwd;
         if (typeof value === 'string' && value !== '') return value;
       } catch {
         /* fall through */
@@ -159,7 +159,7 @@ export function apply(ctx, config) {
 function sessionCwd(ctx, agent) {
   try {
     const session = ctx.get?.('sessions')?.get?.(agent?.id);
-    const cwd = session?.cwd ?? session?.meta?.cwd;
+    const cwd = session?.header?.cwd ?? session?.cwd ?? session?.meta?.cwd;
     if (typeof cwd === 'string' && cwd !== '') return cwd;
   } catch {
     /* fall through */
@@ -171,7 +171,7 @@ function sessionCwd(ctx, agent) {
 function commandDirectory(ctx, invocation) {
   try {
     const session = ctx.get?.('sessions')?.get?.(invocation?.agent?.id);
-    const cwd = session?.cwd ?? session?.meta?.cwd;
+    const cwd = session?.header?.cwd ?? session?.cwd ?? session?.meta?.cwd;
     if (typeof cwd === 'string' && cwd !== '') return cwd;
   } catch {
     /* fall through */
