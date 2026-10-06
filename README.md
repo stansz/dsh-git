@@ -198,11 +198,16 @@ entry together and is what to prefer when it is available. The row inside the
 package needs no editing: it names `dsh-git`, which resolves from the profile's
 `node_modules` once the dependency is installed.
 
-Finally, set that machine's guard mode and worktree root on
-Plugins → DSH Git → Configure. Nothing here is machine-specific: `git` and the
-optional `gh` are the only external tools, authentication comes from that
-machine's own credential helper, and every path resolves against that
-deployment's own `$DSH_HOME`.
+Finally, set that machine's guard mode and worktree root by overriding this
+bundle's row in the profile's own patch layer — the same place every other row is
+configured. There is no Configure page in this version, and no client half: that
+work was built and then removed, because a client half in the boot graph could
+take the front end down. Until the row is overridden, every setting keeps its
+default.
+
+Nothing here is machine-specific: `git` and the optional `gh` are the only
+external tools, authentication comes from that machine's own credential helper,
+and every path resolves against that deployment's own `$DSH_HOME`.
 
 ### `link:` or GitHub?
 
@@ -276,7 +281,7 @@ rather than the plugin*:
 
 Both states are now asserted: absent is a pass with the tool still registered,
 present is a pass with the schema resolved, and one job installs the dependency
-so the Configure-page path is exercised too.
+so the resolved-schema path is exercised too.
 
 None of the suites need the network or a credential: `e2e.mjs` clones a local
 bare repository, so pushes, upstream tracking and ahead/behind are exercised

@@ -48,7 +48,7 @@ export const name = 'git';
 /** The services this plugin contributes to. */
 export const inject = ['tools', 'commands'];
 
-/** Settings surfaced on Plugins → DSH Git → Configure. */
+/** Settings, set by overriding this bundle's row in the profile's patch layer. */
 export const Config = buildConfig();
 
 /** The command-line tokens `/git` understands, mapped to the tool's arguments. */
