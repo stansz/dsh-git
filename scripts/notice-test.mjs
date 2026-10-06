@@ -1,28 +1,36 @@
 #!/usr/bin/env node
 /**
- * A sync notice must never be able to break the session it reports on.
+ * A sync notice must never break the session it reports on, and must never cry
+ * wolf about a repository that is fine.
  *
- * notifyAgent() tells the model that a turn sync did not finish, using
- * agent.inject(). That call is not ephemeral: it lands in the session log as an
- * agent/inbox/spliced row, and the inbox fold keys pending messages by id.
+ * Two defects live here, both found in a live profile rather than by reading:
  *
- *   if (ids.has(message.id)) throw new Error(message.id + ' is already pending');
+ *   1. notifyAgent() injected a message with no id. The call is durable
+ *      session-log content, and the inbox fold keys pending messages by id, so
+ *      two notices pending at once both keyed on undefined and the fold threw -
+ *      which made the whole session unloadable, not just the note. Adding
+ *      source alone shipped as the fix and was not one.
  *
- * So two notices pending at once without an id both key on undefined, the fold
- * throws, the projection fails, and the whole session becomes unloadable - not
- * just the note. That is not hypothetical: it is what happened to a real session
- * on this machine, at seq 1896 and 1901.
+ *   2. syncRepo() reported "not pushed: main is a protected branch" even when
+ *      the branch was clean and level with its upstream, because the protected
+ *      branch path had no equivalent of the ahead > 0 guard the turnPush path
+ *      already had. Every turn on a spotless repository raised an alarm.
  *
- * This suite exists because adding source alone was shipped as the fix, and it
- * was not one: an id-less message still collides. Both fields are asserted here,
- * and the identity invariant is asserted the way the fold asserts it.
+ * Both directions of (2) are asserted: silence when there is nothing to push,
+ * and an alarm when there really is.
  *
  *   node scripts/notice-test.mjs
  *
- * Exits non-zero, naming the payload that would have corrupted a session.
+ * Runs anywhere: no network, no credentials. The repository it builds is local.
  */
 
-import { attentionText, notifyAgent } from '../lib/turn-commit.mjs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { resolveConfig } from '../lib/config.mjs';
+import { attentionText, notifyAgent, syncRepo } from '../lib/turn-commit.mjs';
 
 const failures = [];
 let assertions = 0;
@@ -31,6 +39,10 @@ const check = (condition, message) => {
   assertions += 1;
   if (!condition) failures.push(message);
 };
+
+/* ------------------------------------------------------------------ *
+ * 1. What notifyAgent() writes into the session log
+ * ------------------------------------------------------------------ */
 
 /** One sync that could not finish, shaped like the real thing. */
 const result = {
@@ -53,8 +65,6 @@ function recordingAgent() {
 
 const ctx = { logger: { warn: () => {} } };
 
-// Two turns that both failed to push. Both notices stay pending in the same
-// inbox, which is the state that corrupted the real session.
 const recorder = recordingAgent();
 notifyAgent(ctx, recorder.agent, result);
 notifyAgent(ctx, recorder.agent, result);
@@ -80,8 +90,6 @@ for (const [index, message] of recorder.injected.entries()) {
   check(text === expectedText, at + ': text is not what attentionText() produces');
 }
 
-// The invariant the fold enforces, asserted the way the fold asserts it: every
-// pending message must carry its own identity.
 const ids = new Set(recorder.injected.map((message) => message.id));
 check(
   ids.size === recorder.injected.length,
@@ -89,15 +97,65 @@ check(
     '), which fails the projection and takes the whole session with it',
 );
 
-// The notice still has to reach the model, and wake it.
 check(recorder.wokeNow() === 2, 'followup() was not called once per notice; the note would sit unread');
-const firstText =
-  recorder.injected[0] && recorder.injected[0].content && recorder.injected[0].content[0] &&
-  recorder.injected[0].content[0].text;
-check(
-  typeof firstText === 'string' && firstText.includes('could not finish syncing'),
-  'the notice no longer says what happened',
+
+/* ------------------------------------------------------------------ *
+ * 2. When the notice is allowed to speak
+ * ------------------------------------------------------------------ */
+
+const gitIn = (dir, args) => execFileSync(
+  'git',
+  ['-c', 'user.email=notice-test@example.invalid', '-c', 'user.name=notice-test',
+    '-c', 'commit.gpgsign=false', '-c', 'init.defaultBranch=main', ...args],
+  { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
 );
+
+const root = mkdtempSync(join(tmpdir(), 'dsh-git-notice-'));
+const home = join(root, 'home');
+const repo = join(root, 'repo');
+const origin = join(root, 'origin.git');
+const previousHome = process.env.DSH_HOME;
+
+try {
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(home, { recursive: true });
+  // Keep the plugin's session state out of the real profile.
+  process.env.DSH_HOME = home;
+
+  gitIn(repo, ['init']);
+  gitIn(root, ['init', '--bare', origin]);
+  writeFileSync(join(repo, 'a.txt'), 'a');
+  gitIn(repo, ['add', 'a.txt']);
+  gitIn(repo, ['commit', '-m', 'first']);
+  gitIn(repo, ['remote', 'add', 'origin', origin]);
+  gitIn(repo, ['push', '-u', 'origin', 'main']);
+
+  const config = resolveConfig({});
+  const sessionId = 'notice-test-session';
+
+  // Clean, level with its upstream, on a protected branch: the steady state.
+  const quiet = await syncRepo(repo, config, sessionId, [], { turn: 1 });
+  check(
+    Array.isArray(quiet.notes) && quiet.notes.length === 0,
+    'a clean protected branch level with its upstream raised an alarm: ' + JSON.stringify(quiet.notes),
+  );
+
+  // One genuinely unpushed commit on the same branch: it must still speak up.
+  gitIn(repo, ['commit', '--allow-empty', '-m', 'work that is not on the remote']);
+  const loud = await syncRepo(repo, config, sessionId, [], { turn: 2 });
+  check(
+    Array.isArray(loud.notes) && loud.notes.some((note) => note.includes('not pushed')),
+    'a real unpushed commit on a protected branch raised no alarm: ' + JSON.stringify(loud.notes),
+  );
+} catch (error) {
+  failures.push('the local repository fixture failed: ' + String(error && error.message ? error.message : error));
+} finally {
+  if (previousHome === undefined) delete process.env.DSH_HOME;
+  else process.env.DSH_HOME = previousHome;
+  rmSync(root, { recursive: true, force: true });
+}
+
+/* ------------------------------------------------------------------ */
 
 if (failures.length > 0) {
   console.error('notice-test: ' + String(failures.length) + ' failure(s)');
@@ -106,5 +164,6 @@ if (failures.length > 0) {
 }
 
 console.log(
-  'notice-test: OK - ' + String(assertions) + ' assertions; every sync notice carries a unique id and a source',
+  'notice-test: OK - ' + String(assertions) +
+    ' assertions; every notice carries a unique id and a source, and speaks only when work is really unpushed',
 );
