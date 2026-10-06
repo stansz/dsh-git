@@ -30,6 +30,7 @@ import { runTurnSync, pushDecision, messageFor, registerTurnSync, needsAttention
 import { removeWorktree, createWorktree, pruneWorktrees } from '../lib/worktrees.mjs';
 import { record, targetPath, safeSessionId } from '../lib/session-files.mjs';
 import { evaluate } from '../lib/guard.mjs';
+import { evaluateWorktree } from '../lib/worktree-guard.mjs';
 
 const SESSION = 'e2e-session';
 const failures = [];
@@ -488,14 +489,37 @@ const timedOut = await runTurnSync({
 check('a timed-out sync still reported the repository', (timedOut.repos ?? []).length > 0, JSON.stringify(timedOut.repos));
 check('and its notes are announced', needsAttention(timedOut) === true, JSON.stringify(timedOut.repos));
 
-console.log('\n--- the guard covers every shell tool, not only bash ---');
+console.log('\n--- the guard covers both shell tools the Harness ships ---');
+// `bash` and `pwsh` are the two names that exist. A guard covering only `bash`
+// leaves the other as a documented way around it, and naming a tool that does
+// not exist would advertise coverage that is not there — so the defaults are
+// asserted against this list rather than against a wider imagined one.
 const guardConfig = resolveConfig({});
-for (const tool of ['bash', 'pwsh', 'shell', 'terminal']) {
+check('the default covers exactly the shipped shell tools',
+  JSON.stringify(guardConfig.guardTools) === JSON.stringify(['bash', 'pwsh']), JSON.stringify(guardConfig.guardTools));
+for (const tool of ['bash', 'pwsh']) {
   const decision = evaluate({ name: tool, arguments: { command: 'git push --force' }, signal: new AbortController().signal }, guardConfig);
   check('a destructive git command via ' + tool + ' is denied', decision.kind === 'deny', decision.kind);
+  const allowed = evaluate({ name: tool, arguments: { command: 'git status' }, signal: new AbortController().signal }, guardConfig);
+  check('a read-only git command via ' + tool + ' is allowed', allowed.kind === 'allow', allowed.kind);
 }
 const untouched = evaluate({ name: 'read', arguments: { file_path: '/x' }, signal: new AbortController().signal }, guardConfig);
 check('a non-shell tool is still not guarded', untouched.kind === 'allow', untouched.kind);
+// A tool the guard is not told about is unguarded. That is the documented
+// contract, and asserting it keeps the behaviour from looking like a bug later.
+const unlisted = evaluate({ name: 'some_other_shell', arguments: { command: 'git push --force' }, signal: new AbortController().signal }, guardConfig);
+check('a tool outside guardTools is not inspected', unlisted.kind === 'allow', unlisted.kind);
+check('and adding it to guardTools does inspect it',
+  evaluate({ name: 'some_other_shell', arguments: { command: 'git push --force' }, signal: new AbortController().signal },
+    resolveConfig({ guardTools: ['bash', 'pwsh', 'some_other_shell'] })).kind === 'deny');
+
+console.log('\n--- worktree enforcement ships off, so nothing changes unasked ---');
+check('autoWorktree defaults to off', resolveConfig({}).autoWorktree === 'off', resolveConfig({}).autoWorktree);
+const wtDenied = await evaluateWorktree({ name: 'write', arguments: { file_path: join(workDir, 'app.txt') }, agent: { id: SESSION } }, resolveConfig({ worktreeRoot, stateRoot, autoWorktree: 'off' }), { cwd: workDir });
+check('with it off, an edit on main is allowed', wtDenied.kind === 'allow', wtDenied.kind);
+const wtGuarded = await evaluateWorktree({ name: 'write', arguments: { file_path: join(workDir, 'app.txt') }, agent: { id: SESSION } }, resolveConfig({ worktreeRoot, stateRoot, autoWorktree: 'protected' }), { cwd: workDir });
+check('with it protected, the same edit is refused', wtGuarded.kind === 'deny', wtGuarded.kind);
+check('and the refusal names the action to run', String(wtGuarded.reason).includes('action "start"'), String(wtGuarded.reason).slice(-80));
 
 console.log('\n--- the recorder only records real edits ---');
 check('write records its target', targetPath({ name: 'write', arguments: { file_path: '/x/y.mjs' } }) === '/x/y.mjs');

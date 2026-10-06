@@ -16,6 +16,9 @@
  *   ctx.on('tools/pre-execute')     a guard that redirects raw mutating git
  *                                   in bash at the tool that does it cleanly,
  *                                   and refuses the commands that discard work
+ *   ctx.on('tools/pre-execute')     worktree enforcement: with autoWorktree set,
+ *                                   a file edit aimed at a protected branch is
+ *                                   refused and pointed at action "start"
  *   ctx.on('agent/turn-stopping')   the automatic sync: at the end of every
  *                                   turn that changed files, commit them and
  *                                   push whatever is safe to push
@@ -35,6 +38,7 @@ import { evaluate } from './lib/guard.mjs';
 import { render, summarize } from './lib/render.mjs';
 import { registerTurnSync } from './lib/turn-commit.mjs';
 import { registerSessionFiles } from './lib/session-files.mjs';
+import { registerWorktreeGuard } from './lib/worktree-guard.mjs';
 import { toplevel } from './lib/git.mjs';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 
@@ -120,6 +124,11 @@ export function apply(ctx, config) {
     'git command registration',
   );
 
+  // Enforcement first, then the recorder. Order matters and this is the reason:
+  // the recorder decides which repositories the turn end may commit, so a path
+  // that was refused must not have been recorded — otherwise the turn sync would
+  // commit a repository the session never actually changed.
+  registerWorktreeGuard(ctx, resolveConfig(config), { cwdOf: (agent) => sessionCwd(ctx, agent) });
   registerGuard(ctx, config);
   registerTurnSync(ctx, config);
 
@@ -144,6 +153,18 @@ export function apply(ctx, config) {
     if (repoRoot === undefined) return undefined;
     return { repoRoot, path: absolute };
   });
+}
+
+/** The working directory of one agent's session, else the process directory. */
+function sessionCwd(ctx, agent) {
+  try {
+    const session = ctx.get?.('sessions')?.get?.(agent?.id);
+    const cwd = session?.cwd ?? session?.meta?.cwd;
+    if (typeof cwd === 'string' && cwd !== '') return cwd;
+  } catch {
+    /* fall through */
+  }
+  return process.cwd();
 }
 
 /** The directory a composer invocation is about: the agent's session, else the process. */

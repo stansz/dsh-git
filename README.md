@@ -61,6 +61,33 @@ the worktree, so for those branches pushing is not a convenience.
 What is never done: pushing a protected branch, committing during a merge,
 rebase or cherry-pick, or committing more paths than `turnCommitMaxFiles`.
 
+## Forcing a worktree
+
+Everything above *asks*. `autoWorktree` is the only setting that **refuses**, and
+it exists because the moment that decides where work lands is a file edit — a
+model that reads "work in a worktree" and then edits `main` has followed the
+instruction as far as it understood it.
+
+| Mode | An edit is refused when |
+|---|---|
+| `off` *(default)* | never — the tool description and the git guard are the whole story |
+| `protected` | the target repository is on a protected branch and the edit is not already inside this session's worktree |
+| `always` | the target repository has no worktree for this session, on any branch |
+
+Turn it on when you want isolation to be structural rather than advisory. Leave it
+off while you are still forming the habit — a rule that fires before you expect it
+is a rule you route around.
+
+**What it does not do:** create the worktree for you. It refuses and names
+`action "start"`. A guard that created one as a side effect would leave a worktree
+behind for every abandoned edit and teach the caller nothing about why the write
+stopped.
+
+**What it never touches:** an edit already inside your worktree, a non-protected
+branch under `protected`, a path outside any repository, and a shell command —
+reading a shell command well enough to know whether it writes a file is the same
+unbounded problem the git guard already documents as best-effort.
+
 ## Worktrees
 
 One task, one worktree, at `~/.dsh/worktrees/<repo>/<slug>` on branch
@@ -114,8 +141,8 @@ documented in `lib/guard.mjs` rather than papered over.
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
 | `protectedBranches` | `[main, master]` | Never pushed automatically |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
-| `guardTools` | `[bash, pwsh, shell, terminal]` | Which tools the guard inspects. Every shell tool the Harness can dispatch, because a guard covering only one is a documented way around it |
-| `autoWorktree` | `protected` | `off` \| `protected` \| `always` |
+| `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
+| `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
 | `turnPush` | `true` | Push each turn when the branch is safe |
@@ -218,8 +245,9 @@ you want the API to authenticate through it — `GH_TOKEN` works without it.
 ## Verify it
 
 ```bash
-node scripts/guard-test.mjs       # the guard's classification table — 187 assertions
-node scripts/portability-check.mjs # the portability contract, 53 assertions
+node scripts/guard-test.mjs        # the guard's classification table — 187 assertions
+node scripts/portability-check.mjs # the portability contract, 55 assertions
+node scripts/worktree-guard-test.mjs # worktree enforcement, both directions — 36 assertions
 node scripts/workflow-check.mjs   # this repo's CI file is valid and every step does something
 node scripts/check.mjs            # every tool result is lossless JSON and matches its schema
 node scripts/e2e.mjs              # the whole cycle against a throwaway repo + local bare origin

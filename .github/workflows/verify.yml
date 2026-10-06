@@ -79,6 +79,12 @@ jobs:
       - name: Portability — deployment home, no machine paths, loads bare
         run: node scripts/portability-check.mjs
 
+      # The worktree rule has two directions and both matter: firing when it
+      # should is the feature, firing when it should not is how a guard gets
+      # switched off. Most of these assertions are the second kind.
+      - name: Worktree enforcement — refuses what it should, and nothing else
+        run: node scripts/worktree-guard-test.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself
