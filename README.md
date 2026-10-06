@@ -284,17 +284,23 @@ commits too — `pre-commit`, `commit-msg`, `post-commit`, and a global
 `core.hooksPath`, if one is set.
 
 That matters most for `post-commit`, because it runs *after* the commit exists
-and can do anything. This workspace already has one that is executable:
+and can do anything. This workspace used to have five of them — one per bundle —
+each exactly this:
 
 ```
-dsh-brave-search/.git/hooks/post-commit:
+<repo>/.git/hooks/post-commit:
     #!/bin/sh
     git push origin HEAD
 ```
 
 A hook like that pushes on every commit, **including automatic turn commits**, and
-it bypasses everything in this plugin's push path. A global `core.hooksPath`
-pointing at that same hook would put it in every repository at once.
+it bypasses everything in this plugin's push path. They were removed on
+2026-10-05, superseded by the turn sync, which decides *whether* a branch may be
+pushed instead of pushing whatever `HEAD` happens to be. Backed up under
+`.dsh-hooks-removed/` in this workspace.
+
+A global `core.hooksPath` pointing at such a hook would put it back in every
+repository at once.
 
 The specific hazard: `action "push"` refuses a protected branch, but a
 `post-commit` hook that pushes `HEAD` does not know what branch it is on. A hook
