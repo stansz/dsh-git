@@ -85,6 +85,15 @@ jobs:
       - name: Worktree enforcement — refuses what it should, and nothing else
         run: node scripts/worktree-guard-test.mjs
 
+      # The notice a failed sync injects is durable session-log content, so a
+      # malformed one does not merely fail to appear — it makes the whole
+      # session unloadable. This locks down that regression from a real
+      # corrupted session: the inbox fold keys pending messages by `id`, so two
+      # notices without one collide on `undefined` and the projection throws.
+      # `source` alone shipped once as the fix and was not enough.
+      - name: Sync notice — a durable message needs a unique id and a source
+        run: node scripts/notice-test.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself
