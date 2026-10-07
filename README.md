@@ -3,6 +3,18 @@
 One consistent way for DSH to use git and GitHub, and the automation that makes
 "nothing was left uncommitted" true without a model remembering it.
 
+A third-party bundle for DeepSeek Harness. MIT licensed — see [LICENSE](LICENSE).
+Not an official DeepSeek package.
+
+```bash
+# run in the profile directory — the install target, not a global prefix
+pnpm add github:stansz/dsh-git
+```
+
+Every setting has a working default, so it mounts and does something useful with no
+configuration at all. The two worth changing are in
+[Changing a setting](#changing-a-setting).
+
 ## Why this exists
 
 DSH had no git tool. Every session reached git through `bash`, invented its own
@@ -95,6 +107,11 @@ One task, one worktree, at `~/.dsh/worktrees/<repo>/<slug>` on branch
 nothing to add to `.gitignore`, and no second copy of the tree for editors and
 watchers to index and for test globs to match twice.
 
+The root is the `worktreeRoot` setting. If your harness restricts file writes to the
+session workspace, set it to a path **inside** that workspace — otherwise the guard
+refuses an edit and points at a directory the agent cannot write to. See
+[Changing a setting](#changing-a-setting).
+
 - The worktree is locked while a session owns it.
 - A branch checked out more than once is refused, never forced.
 - Removal never uses `--force` on its own and never `rm -rf`. A dirty worktree
@@ -152,6 +169,36 @@ documented in `lib/guard.mjs` rather than papered over.
 | `githubHost` | `github.com` | Set for GitHub Enterprise |
 | `prDraft` | `false` | Open pull requests as drafts by default |
 | `timeoutMs` | `30000` | Per-git-command deadline |
+
+### Changing a setting
+
+There is **no Configure page**. One needed a client half registering into the boot
+graph, and a client half there could take the front end down — that work was built
+and then removed, deliberately. A setting is changed by overriding this bundle's
+row in the profile's own patch layer, `~/.dsh/profiles/<name>/cordis.patch.yml`:
+
+```yaml
+- id: dsh-git
+  name: 'dsh-git'
+  config:
+    autoWorktree: protected
+```
+
+**Only the fields you name are applied.** Every other field keeps its default, so
+the block above is a complete configuration. The row id is `dsh-git` — the same id
+the bundle's own patch inserts. Restart the Harness to load it: a plugin's row
+config is read when the plugin mounts, so an edit here is inert until then.
+
+The two settings most worth changing:
+
+- **`autoWorktree: protected`** if you would rather work never landed on `main` at
+  all. From then on an edit to a repository on a protected branch is refused, and
+  the refusal points at the `git` tool's `action: "start"`.
+- **`worktreeRoot`** if your deployment's file sandbox only writes inside the
+  session workspace — the Harness ships one that does. Worktrees default to
+  `~/.dsh/worktrees`, which is *outside* that workspace, and the result is a guard
+  that refuses your edit and points at a directory the agent cannot write to. Point
+  `worktreeRoot` at a directory inside the workspace instead.
 
 ## Install it on another machine
 
@@ -244,8 +291,8 @@ recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine must us
 Git installs instead. That trap is about *deployment*. It is not an argument
 against `link:` while you are the one doing the developing.
 
-**Requirements:** git on `PATH`, Node 18+ for global `fetch`, and `gh` only if
-you want the API to authenticate through it — `GH_TOKEN` works without it.
+**Requirements:** see [Requirements](#requirements) below — git on `PATH`, Node 18+
+for global `fetch`, and `gh` only as an optional token source.
 
 ## Verify it
 
@@ -253,12 +300,13 @@ you want the API to authenticate through it — `GH_TOKEN` works without it.
 node scripts/guard-test.mjs        # the guard's classification table — 187 assertions
 node scripts/portability-check.mjs # the portability contract, 55 assertions
 node scripts/worktree-guard-test.mjs # worktree enforcement, both directions — 36 assertions
+node scripts/notice-test.mjs      # the sync notice: a unique id, a source, and no false alarm on a clean repo
 node scripts/workflow-check.mjs   # this repo's CI file is valid and every step does something
 node scripts/check.mjs            # every tool result is lossless JSON and matches its schema
 node scripts/e2e.mjs              # the whole cycle against a throwaway repo + local bare origin
 ```
 
-All four run in CI on every push and pull request — see
+All seven run in CI on every push and pull request — see
 [verify.yml](.github/workflows/verify.yml) — across **ubuntu and macOS** on Node
 20 and 22, and all four jobs are green.
 
@@ -369,6 +417,12 @@ git on `PATH`. `gh` is optional and only used as a token source; without it, set
 `GH_TOKEN`. Node 18+ for global `fetch`. No npm dependencies — `lib/*.mjs` import
 only `node:` builtins, and `@deepseek-ai/schemastery` is loaded defensively so a
 `link:` install cannot take the plugin down at activation.
+
+On the Harness side it declares `tools`, `commands` and `sessions` in `inject`, so
+a Harness without those leaves the row pending rather than half-mounting it. It
+reaches for `agents` and `workspaceChanges` defensively — a build without them
+still works, with a less precise commit subject — and registers on
+`tools/pre-execute` and `agent/turn-stopping`.
 
 ## How to see the automatic commit work
 

@@ -1,10 +1,10 @@
 name: verify
 
-# The three suites in scripts/ are the whole verification story for this bundle,
-# and they were all written to run anywhere: no network, no credentials, no
-# services. `scripts/e2e.mjs` clones a local bare repository rather than talking
-# to GitHub, so pushes, upstream tracking and ahead/behind are exercised through
-# real git and a real transport without a token in sight.
+# Every suite in scripts/ is part of the verification story for this bundle, and
+# they were all written to run anywhere: no network, no credentials, no services.
+# `scripts/e2e.mjs` clones a local bare repository rather than talking to GitHub,
+# so pushes, upstream tracking and ahead/behind are exercised through real git and
+# a real transport without a token in sight.
 #
 # The matrix is the point of running this at all. The verification behind this
 # bundle was done on one machine — macOS, git 2.54, /private symlinks — and the
