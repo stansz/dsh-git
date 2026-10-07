@@ -82,6 +82,16 @@ for (const command of [
   'git blame README.md',
   'git fetch --dry-run',
   'git describe --tags',
+  // No tool action exists for these, so gating them would produce a prompt whose
+  // answer is "not supported" — worse than leaving the command alone.
+  'git tag v1.2.3',
+  'git tag -a v1 -m x',
+  'git remote add origin https://example.invalid/r.git',
+  'git config user.email x@example.invalid',
+  'git submodule update --init',
+  'git gc --auto',
+  'git notes add -m x',
+  'git lfs pull',
 ]) expect('allow', command);
 
 console.log('\n--- mutating: must ask, and the reason must name the replacement ---');
@@ -96,7 +106,6 @@ for (const command of [
   'git merge main',
   'git stash',
   'git branch newthing',
-  'git tag v1.2.3',
   'git mv a.txt b.txt',
   'git restore .',
   'git pull',
