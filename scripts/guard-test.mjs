@@ -94,7 +94,7 @@ for (const command of [
   'git lfs pull',
 ]) expect('allow', command);
 
-console.log('\n--- mutating: must ask, and the reason must name the replacement ---');
+console.log('\n--- mutating: must be refused, and the reason must name the replacement ---');
 for (const command of [
   'git commit -m "x"',
   'git add -A',
@@ -111,7 +111,7 @@ for (const command of [
   'git pull',
   'git cherry-pick abc123',
   'git worktree add ../x',
-]) expect('ask', command);
+]) expect('deny', command);
 
 console.log('\n--- destructive: must deny, and no reason may point at a replacement that does not exist ---');
 for (const command of [
@@ -139,18 +139,18 @@ for (const command of [
 console.log('\n--- ordering: a deny anywhere outranks an ask anywhere ---');
 expect('deny', 'git status && git reset --hard', 'read then destructive');
 expect('deny', 'git push; git clean -fd', 'mutating then destructive');
-expect('ask', 'git status && git push', 'read then mutating');
+expect('deny', 'git status && git push', 'read then mutating');
 
 console.log('\n--- wrappers and environment forms ---');
-expect('ask', 'cd /tmp && git commit -m x', 'chained after cd');
-expect('ask', 'sudo git push', 'sudo stripped');
+expect('deny', 'cd /tmp && git commit -m x', 'chained after cd');
+expect('deny', 'sudo git push', 'sudo stripped');
 expect('allow', 'git -C /repo status', '-C before subcommand');
-expect('ask', 'git -C /repo commit -m x', '-C before subcommand');
+expect('deny', 'git -C /repo commit -m x', '-C before subcommand');
 expect('deny', 'git -C /repo reset --hard', '-C before destructive');
-expect('ask', 'git -c user.name=x commit -m y', '-c before subcommand');
-expect('ask', 'git --git-dir=/r/.git push', '--git-dir before subcommand');
+expect('deny', 'git -c user.name=x commit -m y', '-c before subcommand');
+expect('deny', 'git --git-dir=/r/.git push', '--git-dir before subcommand');
 expect('deny', 'bash -c "git push --force"', 'bash -c unwrapped');
-expect('ask', 'bash -c "git commit -m x"', 'bash -c unwrapped');
+expect('deny', 'bash -c "git commit -m x"', 'bash -c unwrapped');
 expect('ask', 'sh -c "git commit -m x"', 'sh -c is not reliably inspectable');
 expect('ask', 'eval "git reset --hard"', 'eval is not reliably inspectable');
 expect('ask', 'xargs git push', 'xargs is not reliably inspectable');
@@ -158,7 +158,7 @@ expect('ask', 'xargs git push', 'xargs is not reliably inspectable');
 // a protected branch, so every push form asks or denies. A dry run is harmless
 // on its own, but exempting it would open the gap the guard exists to close:
 // `--dry-run --force` reads identically at a glance.
-expect('ask', 'git push --dry-run', 'the push form the tool owns, dry run or not');
+expect('deny', 'git push --dry-run', 'the push form the tool owns, dry run or not');
 expect('deny', 'git push --dry-run --force', 'a destructive flag outranks the dry run');
 expect('deny', 'git push --delete origin main', 'deleting a remote branch');
 

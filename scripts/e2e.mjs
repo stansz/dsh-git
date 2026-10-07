@@ -577,7 +577,7 @@ check('finishing a removed worktree fails cleanly', gone.ok === false && typeof 
 
 console.log('\n--- the guard sends raw git at the tool ---');
 const rawCommit = evaluate({ name: 'bash', arguments: { command: 'git commit -m x' }, signal: new AbortController().signal }, config);
-check('a raw commit is gated', rawCommit.kind === 'ask', rawCommit.kind);
+check('a raw commit is refused', rawCommit.kind === 'deny', rawCommit.kind);
 check('the gate names the commit action', /commit/u.test(rawCommit.reason ?? ''), String(rawCommit.reason).slice(0, 80));
 const rawStatus = evaluate({ name: 'bash', arguments: { command: 'git status' }, signal: new AbortController().signal }, config);
 check('a raw status is allowed', rawStatus.kind === 'allow', rawStatus.kind);
