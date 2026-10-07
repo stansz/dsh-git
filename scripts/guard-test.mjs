@@ -223,6 +223,21 @@ for (const command of [...MUTATING_SUBCOMMANDS, ...DESTRUCTIVE_SUBCOMMANDS]) {
   }
 }
 
+// `merge` is the case that caught a real agent. Its next step used to point at
+// `sync`, which only fast-forwards and cannot join a diverged branch — so the
+// advice named a path that could not finish the job, and the agent concluded no
+// action existed and used raw git instead. The path is asserted now.
+console.log('\n--- the merge advice names a path that can finish the job ---');
+const mergeDecision = evaluate(bash('git merge main'), resolveConfig({}));
+const mergeReason = String(mergeDecision.reason ?? '');
+if (!(/action "push"/u.test(mergeReason) && /action "pr"/u.test(mergeReason) && /action "merge"/u.test(mergeReason))) {
+  failures.push('the merge reason does not name the push -> pr -> merge path: ' + mergeReason);
+  console.log('FAIL merge advice -> ' + mergeReason);
+} else {
+  passed += 1;
+  console.log('PASS merge advice -> names push, pr and merge');
+}
+
 console.log('\n' + String(passed) + ' passed, ' + String(failures.length) + ' failed');
 if (failures.length > 0) {
   console.error('\n' + failures.join('\n'));
