@@ -20,7 +20,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { dshHome, resolveConfig, DEFAULT_CONFIG } from '../lib/config.mjs';
+import { dshHome, resolveConfig, worktreeRootFor, DEFAULT_CONFIG } from '../lib/config.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -81,7 +81,18 @@ console.log('--- where a deployment\'s files go ---');
 // shipped package resolves this through $DSH_HOME, so this one has to as well.
 const custom = dshHome({ DSH_HOME: '/opt/other-dsh' });
 check('$DSH_HOME decides the Harness home', custom === '/opt/other-dsh', custom);
-check('the worktree root follows it', withEnv({ DSH_HOME: '/opt/other-dsh' }, () => resolveConfig({}).worktreeRoot) === '/opt/other-dsh/worktrees');
+// `worktreeRoot` deliberately does NOT follow $DSH_HOME any more: worktrees are
+// where edits happen, and a Harness file sandbox writes only inside the session
+// workspace. A root under the Harness home refused the edit and then pointed the
+// agent at a directory it could not write to.
+check('an unset worktree root is not pinned to the Harness home',
+  withEnv({ DSH_HOME: '/opt/other-dsh' }, () => resolveConfig({}).worktreeRoot) === null);
+check('an unset worktree root derives from the session workspace',
+  worktreeRootFor(resolveConfig({}), '/sessions/one') === join('/sessions/one', '.worktrees'));
+check('an explicit worktree root still wins',
+  worktreeRootFor(resolveConfig({ worktreeRoot: '/opt/wt' }), '/sessions/one') === '/opt/wt');
+check('a relative worktree root resolves against the deployment home',
+  withEnv({ DSH_HOME: '/opt/elsewhere' }, () => resolveConfig({ worktreeRoot: 'rel-wt' }).worktreeRoot) === '/opt/elsewhere/rel-wt');
 check('the state root follows it', withEnv({ DSH_HOME: '/opt/other-dsh' }, () => resolveConfig({}).stateRoot) === '/opt/other-dsh/state');
 check('$DSH_HOME beats a conflicting profile dir',
   dshHome({ DSH_HOME: '/a', DSH_PROFILE_DIR: '/b/profiles/x' }) === '/a');
@@ -94,8 +105,15 @@ check('a tilde in $DSH_HOME is expanded', !dshHome({ DSH_HOME: '~/somewhere' }).
 // The path defaults are resolved per call, not captured at import, which is what
 // lets a deployment move its Harness home after this module has loaded.
 const defaults = resolveConfig({});
-check('the defaults are absolute', isAbsolute(defaults.worktreeRoot) && isAbsolute(defaults.stateRoot));
-check('the defaults are outside the repository', !defaults.worktreeRoot.startsWith(root) && !defaults.stateRoot.startsWith(root));
+check('the state root default is absolute', isAbsolute(defaults.stateRoot));
+check('the state root default is outside the repository', !defaults.stateRoot.startsWith(root));
+// The worktree default is derived per session rather than fixed, so what has to
+// hold is that the derived path is absolute, follows the workspace the caller
+// named, and is not this repository.
+const derivedDefault = worktreeRootFor(defaults, '/sessions/one');
+check('the derived worktree root is absolute', isAbsolute(derivedDefault));
+check('the derived worktree root follows the session workspace', derivedDefault === '/sessions/one/.worktrees');
+check('the derived worktree root is not this repository', !derivedDefault.startsWith(root));
 check('an explicit setting still wins over the deployment home',
   withEnv({ DSH_HOME: '/opt/elsewhere' }, () => resolveConfig({ stateRoot: '/tmp/explicit-state' }).stateRoot) === '/tmp/explicit-state');
 check('a relative explicit setting resolves against the deployment home',

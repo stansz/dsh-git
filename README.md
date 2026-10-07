@@ -102,14 +102,17 @@ unbounded problem the git guard already documents as best-effort.
 
 ## Worktrees
 
-One task, one worktree, at `~/.dsh/worktrees/<repo>/<slug>` on branch
-`dsh/<slug>` cut from `origin/<base>`. Outside every repository on purpose:
+One task, one worktree, at `<worktreeRoot>/<repo>/<slug>` on branch `dsh/<slug>`
+cut from `origin/<base>`. Outside every repository on purpose:
 nothing to add to `.gitignore`, and no second copy of the tree for editors and
 watchers to index and for test globs to match twice.
 
-The root is the `worktreeRoot` setting. If your harness restricts file writes to the
-session workspace, set it to a path **inside** that workspace — otherwise the guard
-refuses an edit and points at a directory the agent cannot write to. See
+The root is the `worktreeRoot` setting, and it is **derived from the session's own
+workspace** unless you set it: `<session workspace>/.worktrees`. That default is
+deliberate. Worktrees are where edits happen, and a Harness file sandbox writes only
+inside the session workspace — so a root anywhere else produces a guard that refuses
+an edit and then points at a directory the agent cannot write to. Set `worktreeRoot`
+to move them, and keep the value outside every repository. See
 [Changing a setting](#changing-a-setting).
 
 - The worktree is locked while a session owns it.
@@ -152,7 +155,7 @@ documented in `lib/guard.mjs` rather than papered over.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `worktreeRoot` | `~/.dsh/worktrees` | Where per-task worktrees live |
+| `worktreeRoot` | *(derived)* | Where per-task worktrees live: `<session workspace>/.worktrees` when unset. Set an absolute path to put them elsewhere |
 | `stateRoot` | `~/.dsh/state` | Where session ownership and push backoff are recorded |
 | `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push |
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
@@ -194,11 +197,13 @@ The two settings most worth changing:
 - **`autoWorktree: protected`** if you would rather work never landed on `main` at
   all. From then on an edit to a repository on a protected branch is refused, and
   the refusal points at the `git` tool's `action: "start"`.
-- **`worktreeRoot`** if your deployment's file sandbox only writes inside the
-  session workspace — the Harness ships one that does. Worktrees default to
-  `~/.dsh/worktrees`, which is *outside* that workspace, and the result is a guard
-  that refuses your edit and points at a directory the agent cannot write to. Point
-  `worktreeRoot` at a directory inside the workspace instead.
+- **`worktreeRoot`** to put worktrees somewhere other than the default. Empty —
+  the default, and what almost every deployment wants — derives the root from the
+  session's own workspace (`<session workspace>/.worktrees`), which is inside the
+  region a file sandbox permits writes to and outside every repository. Set an
+  **absolute** path to move them; a relative one resolves against the Harness home.
+  Wherever you point it, keep it outside every repository, or the worktree becomes
+  a second copy of the tree inside the repository that created it.
 
 ## Install it on another machine
 

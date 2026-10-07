@@ -94,6 +94,12 @@ jobs:
       - name: Sync notice — a durable message needs a unique id and a source
         run: node scripts/notice-test.mjs
 
+      # A worktree root outside the session workspace is a guard that refuses an
+      # edit and then points at a directory the agent cannot write to. The default
+      # is derived from the session workspace; an explicit setting still wins.
+      - name: Worktree root — inside the session workspace by default, overridable
+        run: node scripts/worktree-root-test.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself
