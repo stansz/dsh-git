@@ -117,6 +117,14 @@ jobs:
       - name: Scratch exclusion — the worktree root is invisible to git status
         run: node scripts/scratch-exclude-test.mjs
 
+      # The other half of that bug: a branch could carry a `dsh: turn N` commit whose
+      # entire content is scratch, and "holds commits of its own" kept it forever — so
+      # the sync pushed it back to the remote after every merge. The rule that decides
+      # to delete a branch has to distinguish scratch from work, and the assertion that
+      # matters is the one where a branch with a real file survives.
+      - name: Prune — scratch-only commits are not work
+        run: node scripts/prune-test.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself
