@@ -308,12 +308,13 @@ node scripts/worktree-guard-test.mjs # worktree enforcement, both directions —
 node scripts/notice-test.mjs      # the sync notice: a unique id, a source, no false alarm — 17 assertions
 node scripts/worktree-root-test.mjs # the root lands inside the session workspace — 7 assertions
 node scripts/base-branch-test.mjs  # the base branch: explicit, then configured, then default — 8 assertions
+node scripts/scratch-exclude-test.mjs # the scratch root stays invisible to git status
 node scripts/workflow-check.mjs   # this repo's CI file is valid and every step does something
 node scripts/check.mjs            # every tool result is lossless JSON and matches its schema
 node scripts/e2e.mjs              # the whole cycle against a throwaway repo + local bare origin
 ```
 
-All nine run in CI on every push and pull request — see
+All ten run in CI on every push and pull request — see
 [verify.yml](.github/workflows/verify.yml) — across **ubuntu and macOS** on Node
 20 and 22, and all four jobs are green.
 
