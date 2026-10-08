@@ -109,6 +109,14 @@ jobs:
       - name: Base branch — explicit, then configured, then the repository default
         run: node scripts/base-branch-test.mjs
 
+      # The worktree root can land inside the repository it works in, and everything
+      # under it is the plugin's own scratch — but `git status` reports it as untracked
+      # content, and the turn sync stages everything `git status` reports. That is how a
+      # suite's fixture worktrees became `dsh: turn N` commits on task branches and then
+      # reached `main` through a squash merge.
+      - name: Scratch exclusion — the worktree root is invisible to git status
+        run: node scripts/scratch-exclude-test.mjs
+
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
       # nothing. A malformed workflow is the one failure the workflow itself
