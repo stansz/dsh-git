@@ -252,4 +252,4 @@ if (failures.length > 0) {
   console.error('\n' + failures.join('\n'));
   process.exit(1);
 }
-console.log('The guard allows reads, asks before mutations, and denies anything that discards work.');
+console.log('The guard allows reads, refuses mutations, asks about subcommands it cannot classify, and denies anything that discards work.');

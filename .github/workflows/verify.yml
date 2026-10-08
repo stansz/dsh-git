@@ -69,7 +69,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
         run: npm install --no-save --no-audit --no-fund @deepseek-ai/schemastery@3.18.4
 
-      - name: Guard classification (187 assertions)
+      - name: Guard classification (167 assertions)
         run: node scripts/guard-test.mjs
 
       # Portability is a property CI can actually check better than one machine
@@ -99,6 +99,15 @@ jobs:
       # is derived from the session workspace; an explicit setting still wins.
       - name: Worktree root — inside the session workspace by default, overridable
         run: node scripts/worktree-root-test.mjs
+
+      # The base branch came from an expression that parsed differently than it read:
+      # `a ?? b !== '' ? c : d` is `(a ?? (b !== '')) ? c : d`, because `??` binds
+      # tighter than `?:`. An explicit `base` was therefore discarded and the
+      # configured one — default `''` — used instead, so `finish` handed the GitHub
+      # client an empty base, skipped the pull request, and left the worktree open.
+      # The mutation test for this suite fails with `got ""` against the old code.
+      - name: Base branch — explicit, then configured, then the repository default
+        run: node scripts/base-branch-test.mjs
 
       # Runs this workflow's own file through scripts/workflow-check.mjs: real
       # runner labels, every referenced script present, no step that runs
