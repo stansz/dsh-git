@@ -91,6 +91,48 @@ try {
   const left = gitIn(repo, ['branch', '--format=%(refname:short)']);
   check(!left.split('\n').includes('dsh/junk'), 'the scratch-only branch must be gone after apply, still have: ' + JSON.stringify(left));
   check(left.split('\n').includes('dsh/real'), 'the branch with real work must survive apply, got: ' + JSON.stringify(left));
+  // 3. A squash merge leaves a branch that no local rule can recognise: the content is
+  //    in the base, the commits are not. With a GitHub remote and a merge on record,
+  //    prune removes it — and only it. The API is stubbed at `fetch`, the seam `send`
+  //    uses, so this stays a test that needs no network.
+  gitIn(repo, ['remote', 'add', 'origin', 'https://github.com/example/repo.git']);
+  gitIn(repo, ['checkout', '-q', '-b', 'dsh/squashed']);
+  writeFileSync(join(repo, 'squashed.txt'), 'squashed\n', 'utf8');
+  gitIn(repo, ['add', '-A']);
+  gitIn(repo, ['commit', '-qm', 'work that was squashed']);
+  gitIn(repo, ['checkout', '-q', 'main']);
+
+  const asked = [];
+  const realFetch = globalThis.fetch;
+  const previousToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'prune-test-token';
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    asked.push(target);
+    // Only `dsh/squashed` has a merged pull request on record.
+    const merged = target.includes(encodeURIComponent('example:dsh/squashed'));
+    return {
+      status: 200,
+      headers: new Map(),
+      text: async () => JSON.stringify(merged
+        ? [{ number: 42, html_url: 'https://github.com/example/repo/pull/42', merged_at: '2026-10-07T00:00:00Z' }]
+        : []),
+    };
+  };
+
+  try {
+    const viaGithub = await runAction('prune', { repo, apply: true }, context);
+    check(viaGithub.ok === true, 'prune with GitHub failed: ' + JSON.stringify(viaGithub.error ?? viaGithub));
+    check(asked.length > 0, 'prune must have asked GitHub about the branches it kept');
+
+    const after = gitIn(repo, ['branch', '--format=%(refname:short)']);
+    check(!after.split('\n').includes('dsh/squashed'), 'a branch with a merged pull request must be removed, still have: ' + JSON.stringify(after));
+    check(after.split('\n').includes('dsh/real'), 'a branch with no merge on record must survive, got: ' + JSON.stringify(after));
+  } finally {
+    globalThis.fetch = realFetch;
+    if (previousToken === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = previousToken;
+  }
 } catch (error) {
   failures.push('fixture failed: ' + String(error && error.message ? error.message : error));
 } finally {
