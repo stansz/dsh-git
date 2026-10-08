@@ -2,3 +2,9 @@ node_modules/
 .pnpm-store/
 .DS_Store
 *.log
+
+# dsh-git's own scratch namespace. A worktree root that lands inside a repository
+# must never become repository content: the turn sync stages everything `git status`
+# reports, so a stray fixture worktree would be committed to whatever branch the
+# session happens to be on.
+.worktrees/

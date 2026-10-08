@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -106,7 +106,17 @@ function captureRegistrations() {
       const dispose = fn();
       return typeof dispose === 'function' ? dispose : () => {};
     },
-    get: () => undefined,
+    // The tool derives its worktree root from the session directory, falling back to
+    // `process.cwd()` when there is no session. With no session here, the `start` case
+    // below created its worktree inside whatever repository the suite was run from —
+    // and run from a task worktree, that means committing the suite's own fixtures to
+    // a task branch, which is exactly what happened: five branches carry a
+    // `dsh: turn N` commit whose only content is `.worktrees/dsh-git-check-*/`. The
+    // fake session points at the scratch root instead, so nothing this suite creates
+    // can land in the caller's tree.
+    get: (name) => (name === 'sessions'
+      ? { get: () => ({ header: { cwd: scratchRoot } }) }
+      : undefined),
     logger: { info: () => {}, warn: () => {} },
     on: (name, handler) => {
       captured.listeners.push({ name, handler });
@@ -123,7 +133,10 @@ const repo = scratchRepo();
 // Worktrees and state go under the scratch root, not the plugin's real defaults:
 // a harness that writes to the user's home directory cannot be run twice, and
 // under a file sandbox it cannot be run at all.
-const scratchRoot = mkdtempSync(join(tmpdir(), 'dsh-git-state-'));
+// realpath'd because the worktree path the tool reports is: on macOS `tmpdir()` is
+// `/var/folders/...` and the reported path is `/private/var/folders/...`, so the
+// containment assertion below would fail on a correct result.
+const scratchRoot = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-git-state-')));
 const config = resolveConfig({ worktreeRoot: join(scratchRoot, 'worktrees'), stateRoot: join(scratchRoot, 'state'), timeoutMs: 15000 });
 
 try {
@@ -188,6 +201,14 @@ try {
 
       const schema = checkSchema(value, tool.output.schema);
       if (schema.length > 0) fail(testCase.name + ': schema violations — ' + schema.slice(0, 3).join(', '));
+
+      // The invariant behind the fake session above: running `start` here must not
+      // create a worktree in the repository this suite was run from.
+      if (testCase.name === 'start' && typeof value?.worktree === 'string' && value.worktree !== '') {
+        if (!value.worktree.startsWith(scratchRoot)) {
+          fail('start created its worktree outside the scratch root: ' + value.worktree);
+        }
+      }
 
       let text;
       try {
