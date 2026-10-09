@@ -398,6 +398,21 @@ refused. Without `apply: true` it is a dry run like everything else. The guard's
 denial for raw `git branch -D` points here, because action `finish` closes a
 worktree but never removes its branch.
 
+**An abandoned worktree needs naming too.** The rule above only drops a
+*registration* whose directory is already gone, so a worktree still sitting on
+disk — the usual state of a task nobody closed — is invisible to it, and its
+branch cannot be removed while it is checked out there. Name it:
+
+```
+git prune apply: true worktrees: [some-slug]
+```
+
+A path or the directory name both work. A dirty worktree is refused and its files
+are named; the main checkout is never touched; and the branch the removal frees
+is removed with it when it holds no commit of its own. Set `autoWorktree` to
+`protected` or `always` and this is the closing move that keeps the isolation
+from turning into a directory per abandoned task.
+
 ## Requirements
 
 git on `PATH`. `gh` is optional and only used as a token source; without it, set
