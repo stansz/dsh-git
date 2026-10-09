@@ -407,6 +407,19 @@ branch cannot be removed while it is checked out there. Name it:
 git prune apply: true worktrees: [some-slug]
 ```
 
+**A merged task closes itself.** At the end of every turn, a worktree this
+session owns whose pull request was merged is removed — the directory, the
+branch, and the branch's remote ref, together. That is the automatic half of
+this section, and the reason per-task isolation no longer accumulates: a task
+that finished does not wait to be noticed, and a session that simply stops does
+not leave a directory behind for a human to find.
+
+The proof is the same one used everywhere else here — GitHub says a pull request
+from that branch was merged — so nothing is removed on a guess. Unmerged work, a
+failed query, a repository with no remote, and a dirty worktree all mean the same
+thing: leave it alone.
+
+
 A path or the directory name both work. A dirty worktree is refused and its files
 are named; the main checkout is never touched; and the branch the removal frees
 is removed with it when it holds no commit of its own. Set `autoWorktree` to
