@@ -144,12 +144,17 @@ documented in `lib/guard.mjs` rather than papered over.
 
 | Class | Decision |
 |---|---|
-| read-only (`status`, `diff`, `log`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow |
-| mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | ask, with a reason naming the action to use instead |
+| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow |
+| mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
 | destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
 
-`deny` outranks `ask` anywhere in one command line. `guardMode: off` disables it,
-`warn` classifies without blocking.
+`deny` outranks `ask` anywhere in one command line, so `git status && git reset
+--hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
+classify: refusing an operation nobody understands would block work for no stated
+reason. `guardMode: off` disables the guard entirely; `warn` classifies and then
+allows everything, which makes it a diagnostic for seeing what a session reaches
+for — not a safer setting, because it drops the destructive denials with the
+rest.
 
 ## Settings
 
@@ -475,9 +480,11 @@ Nothing breaks if you skip that step either, because of `turnSyncScope: 'session
 — a teammate's uncommitted work in the shared checkout is simply not committed by
 anyone else, and `status` reports it until its owner commits it.
 
-**The guard asks before mutating git in `bash`.** A team hits that often. Set
-`guardMode: 'warn'` while running a team to drop the prompts and keep the
-destructive denials.
+**The guard refuses mutating git in `bash`.** A team hits that often, and the
+answer is the tool rather than a prompt: every refusal names the action that does
+the same job. `guardMode: 'warn'` classifies and allows instead, which is useful
+for seeing what sessions reach for — but it drops the destructive denials too, so
+it is a diagnostic, not a team setting.
 
 ## Path identity, the bug class this code keeps hitting
 
@@ -492,4 +499,26 @@ The rule this settled on: realpath at every boundary, and key session state on
 the **main repository root** (`git worktree list` reports it first), never on the
 directory a caller happens to be standing in — inside a worktree those differ,
 and the registry lookup then finds nothing.
+
+## Tests
+
+```bash
+npm test
+```
+
+`node --test` runs `test/`. Nothing is mocked: every case builds a real
+repository with a real bare origin inside a workspace directory, then drives the
+plugin's own exported functions — `runAction` for the tool actions,
+`evaluateWorktree` through the listener `registerWorktreeGuard` installs, and
+`syncRepo` for the turn boundary — and asserts on real git state: worktree
+registrations, the branch a worktree has checked out, refs in the bare origin,
+the ownership marker beside a worktree, and the plugin's own state files.
+
+Run it from a session workspace: a directory that contains your repositories and
+is not itself one. The suite takes its root from the working directory and moves
+to the repository's parent when that directory is a repository, because a worktree
+root inside a repository is the second copy of the tree this bundle warns about.
+`DSH_GIT_TEST_ROOT` overrides the location. Every case owns
+`<root>/.dsh-git-tests/<case>` and removes it when it ends, and `stateRoot` is
+pointed inside the case, so a test run never writes to a live deployment's state.
 
