@@ -363,9 +363,18 @@ else here refuses to remove things because a branch or worktree may be in use �
 which is right, but it left the plugin unable to tidy up after *itself*.
 
 ```
-git prune              # dry run: what is left behind
-git prune apply: true  # remove it
+git prune                                        # dry run: what is left behind
+git prune apply: true                            # remove it
+git prune repo: /path/to/checkout                # one repository, no sweep
+git prune apply: true branches: [dsh/leftover]   # a branch no rule can prove dead
 ```
+
+With no `repo`, it sweeps every repository under the working directory — the same
+sweep `status` does, and the one this action used to fail with `not-a-repo`. That
+mattered: a session's working directory usually *contains* its repositories
+rather than being one, so the reporting action worked there and the cleanup
+action was impossible, which is the "it cannot clean up after itself" failure in
+its purest form.
 
 It removes a worktree registration whose directory is gone, and a branch under
 `branchPrefix` that **no worktree has checked out and that holds no commit the
@@ -373,6 +382,21 @@ base branch does not already have**. A branch with work of its own is reported
 and kept. That is the whole safety argument, and it is worth stating plainly:
 deleting a branch is what the guard denies `git branch -D` for, so this door
 opens only onto the plugin's own leftovers.
+
+**Two leftovers cannot be proven disposable locally.** A squash merge rewrites a
+branch's commits, so its content is in the base while its commits are not; and a
+repository whose remote is gone cannot answer whether the pull request was
+merged at all. For those, name the branch:
+
+```
+git prune apply: true branches: [dsh/prune-remote]
+```
+
+Naming it *is* the proof — no rule is guessing. Two conditions still hold: the
+name must be under `branchPrefix`, and a branch a worktree has checked out is
+refused. Without `apply: true` it is a dry run like everything else. The guard's
+denial for raw `git branch -D` points here, because action `finish` closes a
+worktree but never removes its branch.
 
 ## Requirements
 
