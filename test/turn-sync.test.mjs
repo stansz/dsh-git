@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
+import { resolveConfig } from '../lib/config.mjs';
 import { pushDecision, syncRepo } from '../lib/turn-commit.mjs';
 import { commitPaths, git, makeCase, remoteBranches } from './helpers.mjs';
 
@@ -30,7 +31,7 @@ test('a turn that changed a file is committed and pushed from its own worktree',
 
   const synced = await syncRepo(worktree, c.config, c.sessionId, ['src/auto.txt'], { turn: 7 });
   assert.equal(synced.committed, true);
-  assert.equal(synced.subject, 'dsh: turn 7 - src/auto.txt'.replace(' - ', ' \u2014 '));
+  assert.equal(synced.subject, 'dsh: turn 7 \u2014 auto.txt', 'the subject names the file, as the history does');
   assert.equal(synced.pushed, true, 'a task branch is safe to push');
   assert.ok(remoteBranches(c.originDir).includes('dsh/auto'), 'the commit is on the remote');
 
@@ -41,10 +42,11 @@ test('a turn that changed a file is committed and pushed from its own worktree',
 });
 
 test('the push rule refuses the branches that would rewrite shared work', () => {
-  const c = { branchPrefix: 'dsh/', protectedBranches: ['main', 'master'] };
-  assert.equal(pushDecision(c, 'main', []).allowed, false);
-  assert.equal(pushDecision(c, 'master', []).allowed, false);
-  assert.equal(pushDecision(c, 'feature', []).allowed, false);
-  assert.equal(pushDecision(c, 'dsh/task', []).allowed, true);
-  assert.equal(pushDecision(c, 'feature', ['feature']).allowed, true, 'the branch of a worktree this session owns is safe');
+  // The resolved configuration the Host hands the turn boundary.
+  const config = resolveConfig({});
+  assert.equal(pushDecision(config, 'main', []).allowed, false);
+  assert.equal(pushDecision(config, 'master', []).allowed, false);
+  assert.equal(pushDecision(config, 'feature', []).allowed, false);
+  assert.equal(pushDecision(config, 'dsh/task', []).allowed, true);
+  assert.equal(pushDecision(config, 'feature', ['feature']).allowed, true, 'the branch of a worktree this session owns is safe');
 });
