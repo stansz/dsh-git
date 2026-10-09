@@ -29,10 +29,22 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { resolveConfig } from '../lib/config.mjs';
+
+// Each case removes its own directory; this takes the empty root with it, so a
+// run leaves nothing behind in the workspace it borrowed. `rmdir` rather than a
+// recursive delete on purpose: a directory that still holds something is a case
+// that failed to clean up, and deleting it here would hide exactly that.
+process.on('exit', () => {
+  try {
+    rmdirSync(join(workspaceRoot(), '.dsh-git-tests'));
+  } catch {
+    /* never created, or not empty */
+  }
+});
 
 /** A directory that is not itself a repository: the fixture workspace. */
 export function workspaceRoot() {
