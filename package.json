@@ -1,6 +1,6 @@
 {
   "name": "dsh-git",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "One clean git and GitHub surface for DSH: status, per-task worktrees, commit, push, sync, pull requests, and enforcement that stops raw git in bash from leaving dirty trees and unpushed commits behind.",
   "license": "MIT",
