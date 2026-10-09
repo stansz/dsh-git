@@ -17,8 +17,14 @@ import { runAction } from '../lib/actions.mjs';
 import { registerWorktreeGuard } from '../lib/worktree-guard.mjs';
 import { makeCase } from './helpers.mjs';
 
-/** Capture the listener registerWorktreeGuard installs, the way ctx.on would. */
-function listenerFor(config, cwd) {
+/**
+ * Capture the listener registerWorktreeGuard installs, the way ctx.on would.
+ *
+ * The execution carries the agent, because that is what identifies the session
+ * that owns a worktree — the Host always supplies it, and without it the guard
+ * answers "allow" for a reason that has nothing to do with the path under test.
+ */
+function listenerFor(config, cwd, sessionId) {
   const listeners = [];
   const ctx = {
     on(event, handler) {
@@ -29,13 +35,14 @@ function listenerFor(config, cwd) {
   registerWorktreeGuard(ctx, config, { cwdOf: () => cwd });
   assert.equal(listeners.length, 1, 'the guard registers one pre-execute listener');
   const next = async () => ({ kind: 'allow' });
-  return (name, filePath) => listeners[0]({ name, arguments: { file_path: filePath } }, next);
+  const exec = (name, filePath) => ({ name, arguments: { file_path: filePath }, agent: { id: sessionId } });
+  return (name, filePath) => listeners[0](exec(name, filePath), next);
 }
 
 test('the guard refuses an edit to a protected branch, whatever shape the path takes', async (t) => {
   const c = makeCase('guard');
   t.after(() => c.cleanup());
-  const decide = listenerFor(c.config, c.reference);
+  const decide = listenerFor(c.config, c.reference, c.sessionId);
 
   // A directory that exists: refused.
   const existing = await decide('write', join(c.repoDir, 'NOTES.md'));
@@ -65,7 +72,7 @@ test('the guard refuses an edit to a protected branch, whatever shape the path t
 test('the guard allows work in the session own worktree, and on a branch that is not protected', async (t) => {
   const c = makeCase('guard-allow');
   t.after(() => c.cleanup());
-  const decide = listenerFor(c.config, c.reference);
+  const decide = listenerFor(c.config, c.reference, c.sessionId);
 
   const started = await runAction('start', { action: 'start', repo: c.repoDir, slug: 'work' }, c.context());
   assert.equal(started.ok, true);
@@ -82,6 +89,6 @@ test('the guard allows work in the session own worktree, and on a branch that is
   assert.equal(allowed.kind, 'allow');
 
   // autoWorktree off means never refuse, whatever the repository is.
-  const off = listenerFor({ ...c.config, autoWorktree: 'off' }, c.reference);
+  const off = listenerFor({ ...c.config, autoWorktree: 'off' }, c.reference, c.sessionId);
   assert.equal((await off('write', join(c.repoDir, 'NOTES.md'))).kind, 'allow');
 });
