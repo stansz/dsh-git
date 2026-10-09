@@ -8,8 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
@@ -45,10 +44,15 @@ test('a branch that holds work is reported and kept', async (t) => {
   const c = makeCase('prune-kept');
   t.after(() => c.cleanup());
 
-  // A real commit on a real branch, not checked out anywhere.
-  const tree = git(c.repoDir, ['rev-parse', 'HEAD^{tree}']);
-  const sha = execFileSync('git', ['commit-tree', tree, '-p', 'HEAD', '-m', 'work of its own'], { cwd: c.repoDir, encoding: 'utf8' }).trim();
-  git(c.repoDir, ['branch', 'dsh/mine', sha]);
+  // A branch with real work of its own and no worktree: an abandoned task, made
+  // the way an abandoned task is made — a branch, a commit, and then the
+  // checkout taken away.
+  const scratch = join(c.root, 'scratch');
+  git(c.repoDir, ['worktree', 'add', '-b', 'dsh/mine', scratch]);
+  writeFileSync(join(scratch, 'mine.txt'), 'work of its own\n');
+  git(scratch, ['add', '-A']);
+  git(scratch, ['commit', '-m', 'work of its own']);
+  git(c.repoDir, ['worktree', 'remove', scratch]);
 
   const applied = await runAction('prune', { action: 'prune', repo: c.repoDir, apply: true }, c.context());
   const entry = (applied.branches ?? []).find((branch) => branch.branch === 'dsh/mine');
