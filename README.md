@@ -207,8 +207,7 @@ The two settings most worth changing:
 
 ## Install it on another machine
 
-The bundle is built to install anywhere, and the portability contract is asserted
-rather than described — `scripts/portability-check.mjs`, run in CI:
+The bundle is built to install anywhere:
 
 - **It follows the deployment's home.** `$DSH_HOME` decides, then
   `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
@@ -298,51 +297,6 @@ against `link:` while you are the one doing the developing.
 
 **Requirements:** see [Requirements](#requirements) below — git on `PATH`, Node 18+
 for global `fetch`, and `gh` only as an optional token source.
-
-## Verify it
-
-```bash
-node scripts/guard-test.mjs        # the guard's classification table — 167 assertions
-node scripts/portability-check.mjs # the portability contract — 64 assertions
-node scripts/worktree-guard-test.mjs # worktree enforcement, both directions — 36 assertions
-node scripts/notice-test.mjs      # the sync notice: a unique id, a source, no false alarm — 17 assertions
-node scripts/worktree-root-test.mjs # the root lands inside the session workspace — 7 assertions
-node scripts/base-branch-test.mjs  # the base branch: explicit, then configured, then default — 8 assertions
-node scripts/scratch-exclude-test.mjs # the scratch root stays invisible to git status
-node scripts/prune-test.mjs        # scratch-only commits are not work — and work is never deleted
-node scripts/workflow-check.mjs   # this repo's CI file is valid and every step does something
-node scripts/check.mjs            # every tool result is lossless JSON and matches its schema
-node scripts/e2e.mjs              # the whole cycle against a throwaway repo + local bare origin
-```
-
-All eleven run in CI on every push and pull request — see
-[verify.yml](.github/workflows/verify.yml) — across **ubuntu and macOS** on Node
-20 and 22, and all four jobs are green.
-
-The matrix is the point. The verification behind this bundle was done on one
-machine: macOS, git 2.54, `/private` symlinks. And the bug class this code keeps
-hitting is path identity, which is *exactly* what differs between platforms —
-ubuntu has no `/private` prefix, so the same realpath logic takes a different
-branch there. CI runs on git 2.55.0 against a local 2.54, which also covers the
-`--porcelain=v2` and `worktree list --porcelain` output this code parses.
-
-CI found two real defects on its first run, both of them *in the verification
-rather than the plugin*:
-
-1. One harness line used the run's global failure count for its PASS/FAIL label,
-   so a single failure printed every later line as FAIL and buried the cause.
-2. The `Config` check asserted that `@deepseek-ai/schemastery` must resolve — but
-   CI has no `node_modules`, and the plugin loads without it *by design*, because
-   a `link:` install does not hoist a bundle's dependencies. All four jobs went
-   red describing correct behaviour as a defect.
-
-Both states are now asserted: absent is a pass with the tool still registered,
-present is a pass with the schema resolved, and one job installs the dependency
-so the resolved-schema path is exercised too.
-
-None of the suites need the network or a credential: `e2e.mjs` clones a local
-bare repository, so pushes, upstream tracking and ahead/behind are exercised
-through real git and a real transport without a token in sight.
 
 ## When the automatic sync cannot finish
 
