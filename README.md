@@ -519,6 +519,8 @@ is not itself one. The suite takes its root from the working directory and moves
 to the repository's parent when that directory is a repository, because a worktree
 root inside a repository is the second copy of the tree this bundle warns about.
 `DSH_GIT_TEST_ROOT` overrides the location. Every case owns
-`<root>/.dsh-git-tests/<case>` and removes it when it ends, and `stateRoot` is
-pointed inside the case, so a test run never writes to a live deployment's state.
+`<root>/.dsh-git-tests/<case>` and removes it when it ends, and the shared root
+goes with the last case — including when the only thing left in it is Finder
+metadata. `stateRoot` is pointed inside the case, so a test run never writes to
+a live deployment's state.
 

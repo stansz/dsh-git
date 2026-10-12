@@ -29,21 +29,38 @@
 
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { resolveConfig } from '../lib/config.mjs';
 
-// Each case removes its own directory; this takes the empty root with it, so a
-// run leaves nothing behind in the workspace it borrowed. `rmdir` rather than a
-// recursive delete on purpose: a directory that still holds something is a case
-// that failed to clean up, and deleting it here would hide exactly that.
-process.on('exit', () => {
+/**
+ * The shared root, removed when it holds nothing of its own.
+ *
+ * Each case removes its own directory; this takes the root with it, so a run
+ * leaves nothing behind in the workspace it borrowed.
+ *
+ * Finder metadata is not a case's leftovers. macOS writes a `.DS_Store` into a
+ * directory nobody opened, and a cleanup that insists on a truly empty directory
+ * then leaves the root sitting in the workspace looking like the suite leaked —
+ * which is what it did. Anything else in there is a case that failed to clean
+ * up, and that stays visible rather than being swept away.
+ *
+ * @param {string} [root] - defaults to the shared root under the workspace.
+ * @returns {boolean} whether the root is gone.
+ */
+export function removeScratchRoot(root = join(workspaceRoot(), '.dsh-git-tests')) {
   try {
-    rmdirSync(join(workspaceRoot(), '.dsh-git-tests'));
+    if (readdirSync(root).some((name) => name !== '.DS_Store')) return false;
+    rmSync(root, { recursive: true, force: true });
   } catch {
-    /* never created, or not empty */
+    /* never created, or already gone */
   }
+  return !existsSync(root);
+}
+
+process.on('exit', () => {
+  removeScratchRoot();
 });
 
 /** A directory that is not itself a repository: the fixture workspace. */
