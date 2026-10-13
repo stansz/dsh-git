@@ -120,7 +120,10 @@ to move them, and keep the value outside every repository. See
 - Removal never uses `--force` on its own and never `rm -rf`. A dirty worktree
   is refused with the uncommitted paths named, and the lock goes back on.
 - A worktree this plugin did not create is never touched.
-- `finish --cleanup` closes the worktree only after committing what was in it.
+- `finish --cleanup` closes the worktree only after committing what was in it *and*
+  getting it onto the remote: a push that failed or was never attempted keeps the
+  worktree and reports why, because a worktree with no published copy of its
+  commits is the only place those commits exist.
 
 ## Authentication
 
@@ -396,6 +399,18 @@ and kept. That is the whole safety argument, and it is worth stating plainly:
 deleting a branch is what the guard denies `git branch -D` for, so this door
 opens only onto the plugin's own leftovers.
 
+**A merged pull request is a proof about a commit, not about a name.** A branch is
+removed on the strength of one only when that pull request merged *the commit the
+branch points at now* — the head sha the API reports, compared with the tip read
+from the branch. Names get reused: `start fix-the-login-bug`, merge it, then
+`start fix-the-login-bug` again for something else. The second task wears the
+first task's name, and a rule that matched on the name alone deleted its newest
+commit, silently, on a sweep that was only supposed to tidy up. Now that branch is
+kept, and the report says a merged pull request exists for the name but covers a
+different commit. The same rule guards the remote ref, which is deleted only when
+it points at that same commit, and it guards the worktree close that runs
+automatically at the end of every turn.
+
 **Two leftovers cannot be proven disposable locally.** A squash merge rewrites a
 branch's commits, so its content is in the base while its commits are not; and a
 repository whose remote is gone cannot answer whether the pull request was
@@ -405,7 +420,12 @@ That is why `merge` performs only a merge that keeps the ancestry, and refuses a
 squash or a rebase outright — before it touches the API, so the answer does not
 depend on the remote either. It also retires the task as part of the merge: the
 worktree, its session record and its branch, at the one moment the fact is in
-hand. A squash performed by hand, in the GitHub UI, is the case this section is
+hand — and only the pull request's *own* head branch, only when it carries
+`branchPrefix`, and only when it points at the commit the merge covered. A merge
+run from somewhere else used to delete the branch the caller happened to be
+standing on, which from the main checkout is `origin/main`. A branch that has
+moved past the merge holds work the pull request never contained, so it stays,
+with the worktree, and the result says which commit was not covered. A squash performed by hand, in the GitHub UI, is the case this section is
 about — nothing ran locally to record anything — so name it:
 
 ```
