@@ -26,8 +26,20 @@ import { messageFor, registerTurnSync, syncRepo } from '../lib/turn-commit.mjs';
 import { resolveConfig } from '../lib/config.mjs';
 import { git, makeCase } from './helpers.mjs';
 
-/** Long enough to be unambiguous on a loaded machine, short enough for a suite. */
-const SETTLE_MS = 80;
+/**
+ * The quiet period these cases use.
+ *
+ * Half a second, not the four the plugin ships: long enough that a "nothing has
+ * happened yet" assertion has real margin on a loaded machine — the suite runs
+ * its files in parallel — and short enough that the positive assertions are
+ * quick. Nothing here asserts that a commit happened *at* a moment; that would
+ * be a test of the scheduler. It asserts the order: a tool call does not commit,
+ * and the quiet afterwards does.
+ */
+const SETTLE_MS = 500;
+
+/** Comfortably inside the quiet period, for the assertions that nothing ran yet. */
+const STILL_BUSY_MS = 100;
 
 /** The commit subject at HEAD. */
 function headSubject(repoDir) {
@@ -40,6 +52,24 @@ function headBody(repoDir) {
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Wait for HEAD to change, and report what it became.
+ *
+ * The positive assertions poll rather than sleep a fixed amount, because the
+ * commit is made by a timer the test does not own and the machine is running
+ * eight other test files at the same time. A deadline is the honest assertion:
+ * *this happened*, rather than *this happened within n milliseconds*.
+ */
+async function commitLands(repoDir, before, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const subject = headSubject(repoDir);
+    if (subject !== before) return subject;
+    if (Date.now() >= deadline) return subject;
+    await wait(25);
+  }
+}
 
 /**
  * A Host, reduced to what the plugin uses.
@@ -112,11 +142,10 @@ test('a tool call arms the turn close; the quiet after it is what commits', asyn
 
   const before = headSubject(c.repoDir);
   host.toolCall();
-  await wait(SETTLE_MS / 2);
+  await wait(STILL_BUSY_MS);
   assert.equal(headSubject(c.repoDir), before, 'the tool call itself commits nothing — that is the whole point');
 
-  await wait(SETTLE_MS * 4);
-  const subject = headSubject(c.repoDir);
+  const subject = await commitLands(c.repoDir, before);
   assert.notEqual(subject, before, 'the turn close fires by itself, with no further tool call');
   assert.equal(subject, 'dsh: written.txt', 'and it names what it contains instead of claiming a turn');
   assert.match(headBody(c.repoDir), /Assisted-by: DSH/u);
@@ -135,10 +164,10 @@ test('a session that keeps calling tools never commits mid-turn', async (t) => {
   host.toolCall();
   await wait(SETTLE_MS / 2);
   host.toolCall();
-  await wait(SETTLE_MS / 2);
+  await wait(STILL_BUSY_MS);
   assert.equal(headSubject(c.repoDir), before, 'the second call pushed the quiet period out');
-  await wait(SETTLE_MS * 4);
-  assert.notEqual(headSubject(c.repoDir), before, 'and the turn is closed once the calls really stop');
+  const subject = await commitLands(c.repoDir, before);
+  assert.notEqual(subject, before, 'and the turn is closed once the calls really stop');
 });
 
 test('a turn close that arrives carries its own number', async (t) => {
@@ -147,9 +176,9 @@ test('a turn close that arrives carries its own number', async (t) => {
   const host = fakeHost(c);
   t.after(() => host.dispose());
 
+  const before = headSubject(c.repoDir);
   host.turnStopping(3);
-  await wait(SETTLE_MS * 4);
-  assert.equal(headSubject(c.repoDir), 'dsh: turn 3 \u2014 written.txt', 'a real turn number is used when the Host supplies one');
+  assert.equal(await commitLands(c.repoDir, before), 'dsh: turn 3 \u2014 written.txt', 'a real turn number is used when the Host supplies one');
 });
 
 test('the sync that runs is the sync that speaks', async (t) => {
@@ -162,7 +191,8 @@ test('the sync that runs is the sync that speaks', async (t) => {
   t.after(() => host.dispose());
 
   host.toolCall();
-  await wait(SETTLE_MS * 5);
+  const deadline = Date.now() + 15000;
+  while (host.injected.length === 0 && Date.now() < deadline) await wait(25);
   assert.equal(headSubject(c.repoDir), 'chore: the fixture repository', 'nothing was committed, as configured');
   assert.equal(host.injected.length, 1, 'the model is told, not just the Host log');
   assert.match(host.injected[0].content[0].text, /turnCommit: false/u);
@@ -180,8 +210,7 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
   const before = headSubject(c.repoDir);
   host.toolCall();
   host.dispose();
-  await wait(SETTLE_MS * 5);
-  assert.notEqual(headSubject(c.repoDir), before, 'work the plugin was holding when it went away is still committed');
+  assert.notEqual(await commitLands(c.repoDir, before), before, 'work the plugin was holding when it went away is still committed');
 });
 
 test('when the deployment has a recorder, its file list is what is committed', async (t) => {
@@ -195,9 +224,9 @@ test('when the deployment has a recorder, its file list is what is committed', a
   const host = fakeHost(c, { recorder: { files: [file] } });
   t.after(() => host.dispose());
 
+  const before = headSubject(c.repoDir);
   host.toolCall();
-  await wait(SETTLE_MS * 4);
-  assert.equal(headSubject(c.repoDir), 'dsh: from-recorder.txt');
+  assert.equal(await commitLands(c.repoDir, before), 'dsh: from-recorder.txt');
 });
 
 test('an automatic commit with no turn reported is named by its contents', async (t) => {
@@ -229,9 +258,10 @@ test('the boundary that fires is recorded, whichever one it was', async (t) => {
   const host = fakeHost(c);
   t.after(() => host.dispose());
 
+  const before = headSubject(c.repoDir);
   host.toolCall();
   host.turnStopping(2);
-  await wait(SETTLE_MS * 4);
+  await commitLands(c.repoDir, before);
   const log = git(c.repoDir, ['--version']) !== undefined
     ? String(await import('node:fs').then((fs) => fs.readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8')))
     : '';
