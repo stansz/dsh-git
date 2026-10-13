@@ -14,7 +14,8 @@ import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
 import { resolveConfig } from '../lib/config.mjs';
-import { pushDecision, syncRepo } from '../lib/turn-commit.mjs';
+import { pushDecision, runTurnSync, syncRepo } from '../lib/turn-commit.mjs';
+import * as store from '../lib/session-files.mjs';
 import { commitPaths, git, makeCase, remoteBranches } from './helpers.mjs';
 
 test('a turn that changed a file is committed and pushed from its own worktree', async (t) => {
@@ -39,6 +40,30 @@ test('a turn that changed a file is committed and pushed from its own worktree',
   const head = git(worktree, ['log', '-1', '--format=%H']);
   assert.deepEqual(commitPaths(worktree, head), ['src/auto.txt']);
   assert.match(git(worktree, ['log', '-1', '--format=%b']), /Assisted-by: DSH/u);
+});
+
+test('a repository git cannot read is reported, not thrown about', async (t) => {
+  const c = makeCase('turn-sync-unreadable');
+  t.after(() => c.cleanup());
+
+  // A path this session is recorded as having changed, which is not a repository:
+  // git cannot run there, so `git worktree list` fails and the listing answers
+  // undefined — which is not an empty list. Reading `.length` off it threw a
+  // TypeError out of the whole sync, so the model was told about a property of
+  // undefined instead of about the repository that could not be read, and the
+  // worktree close never ran.
+  const plain = join(c.root, 'plain-directory');
+  mkdirSync(plain, { recursive: true });
+  const file = join(plain, 'file.txt');
+  writeFileSync(file, 'not in a repository\n');
+  assert.equal(store.record(c.sessionId, plain, file, { stateRoot: c.config.stateRoot }), true);
+
+  const synced = await runTurnSync({ config: c.config, cwd: c.root, sessionId: c.sessionId, turn: undefined });
+  assert.equal(synced.ok, true, 'the sync finishes and reports');
+  const entry = synced.repos.find((repo) => repo.repo === plain);
+  assert.ok(entry !== undefined, 'the repository it could not read is named');
+  assert.equal(entry.committed, false);
+  assert.ok((entry.notes ?? []).length > 0, 'and the reason is in the report rather than in a throw');
 });
 
 test('the push rule refuses the branches that would rewrite shared work', () => {
