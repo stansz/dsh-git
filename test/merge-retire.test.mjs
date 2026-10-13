@@ -84,3 +84,22 @@ test('a record pointing at something that is not a worktree is refused', async (
   assert.equal(record.removed, false);
   assert.match(String(record.error), /not a worktree/u);
 });
+
+test('a squash or a rebase merge is refused before the API is asked', async (t) => {
+  const c = makeCase('merge-refuse-method');
+  t.after(() => c.cleanup());
+
+  const started = await runAction('start', { action: 'start', repo: c.repoDir, slug: 'would-squash' }, c.context());
+
+  for (const method of ['squash', 'rebase']) {
+    const refused = await runAction('merge', { action: 'merge', repo: started.worktree, method }, c.context());
+    assert.equal(refused.ok, false, method + ' must not be performed');
+    // The remote here is not GitHub at all, so a refusal that had come from the
+    // API would carry a different code: this one proves the tool never asked.
+    assert.equal(refused.error.code, 'method-refused');
+    assert.match(refused.error.message, new RegExp(method, 'u'));
+    assert.match(String(refused.error.hint), /defaults to merge|method: "merge"/u);
+  }
+  assert.equal(existsSync(started.worktree), true, 'the task is untouched');
+  assert.equal(state.readSession(c.sessionId, { stateRoot: c.config.stateRoot }).worktrees.length, 1);
+});

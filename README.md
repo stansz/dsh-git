@@ -401,12 +401,12 @@ branch's commits, so its content is in the base while its commits are not; and a
 repository whose remote is gone cannot answer whether the pull request was
 merged at all.
 
-The first of those is why `merge` retires the task as part of the merge. When the
-tool performs the merge, the fact that the branch is merged is in hand at that
-moment and nowhere afterwards — so the worktree, its session record and its
-branch are removed then, and `main` keeps the ancestry that makes a later
-`prune` work offline. A squash performed by hand, in the GitHub UI, is the case
-this section is about: nothing ran locally to record anything, so name it:
+That is why `merge` performs only a merge that keeps the ancestry, and refuses a
+squash or a rebase outright — before it touches the API, so the answer does not
+depend on the remote either. It also retires the task as part of the merge: the
+worktree, its session record and its branch, at the one moment the fact is in
+hand. A squash performed by hand, in the GitHub UI, is the case this section is
+about — nothing ran locally to record anything — so name it:
 
 ```
 git prune apply: true branches: [dsh/prune-remote]
