@@ -399,7 +399,14 @@ opens only onto the plugin's own leftovers.
 **Two leftovers cannot be proven disposable locally.** A squash merge rewrites a
 branch's commits, so its content is in the base while its commits are not; and a
 repository whose remote is gone cannot answer whether the pull request was
-merged at all. For those, name the branch:
+merged at all.
+
+The first of those is why `merge` retires the task as part of the merge. When the
+tool performs the merge, the fact that the branch is merged is in hand at that
+moment and nowhere afterwards — so the worktree, its session record and its
+branch are removed then, and `main` keeps the ancestry that makes a later
+`prune` work offline. A squash performed by hand, in the GitHub UI, is the case
+this section is about: nothing ran locally to record anything, so name it:
 
 ```
 git prune apply: true branches: [dsh/prune-remote]
@@ -420,9 +427,10 @@ branch cannot be removed while it is checked out there. Name it:
 git prune apply: true worktrees: [some-slug]
 ```
 
-**A merged task closes itself.** At the end of every turn, a worktree this
-session owns whose pull request was merged is removed — the directory, the
-branch, and the branch's remote ref, together. That is the automatic half of
+**A merged task closes itself.** Action `merge` retires the task the moment it
+merges, and at the end of every turn a worktree this session owns whose pull
+request was merged is removed — the directory, the branch, and the branch's
+remote ref, together. That is the automatic half of
 this section, and the reason per-task isolation no longer accumulates: a task
 that finished does not wait to be noticed, and a session that simply stops does
 not leave a directory behind for a human to find.
