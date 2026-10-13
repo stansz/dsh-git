@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { runAction } from '../lib/actions.mjs';
 import * as store from '../lib/session-files.mjs';
 import { messageFor, registerTurnSync, syncRepo } from '../lib/turn-commit.mjs';
 import { resolveConfig } from '../lib/config.mjs';
@@ -201,6 +202,29 @@ test('a session that never goes quiet is still committed periodically', async (t
   assert.notEqual(headSubject(c.repoDir), before, 'an unbroken burst of tool calls does not mean nothing is committed');
   const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
   assert.match(log, /pre-execute \(ceiling\)/u, 'and the log says which trigger it was');
+});
+
+test('a stale recorder list does not empty the commit subject', async (t) => {
+  const c = makeCase('boundary-stale-recorder');
+  t.after(() => c.cleanup());
+
+  // The live case: an owned worktree is always in scope, so the commit happens —
+  // and the recorder's list, one turn behind, mentioned only a file outside it.
+  // The filtered list came out empty and the commit was named
+  // "dsh: automatic commit", saying nothing about the six files it contained.
+  const started = await runAction('start', { action: 'start', repo: c.repoDir, slug: 'stale-list' }, c.context());
+  const stale = join(c.root, 'previous-turn.txt');
+  writeFileSync(stale, 'previous turn\n');
+  const file = join(started.worktree, 'this-turn.txt');
+  writeFileSync(file, 'this turn\n');
+  assert.equal(store.record(c.sessionId, started.worktree, file, { stateRoot: c.config.stateRoot }), true);
+
+  const host = fakeHost(c, { recorder: { files: [stale] } });
+  t.after(() => host.dispose());
+
+  const before = git(started.worktree, ['log', '-1', '--format=%s']);
+  host.toolCall();
+  assert.equal(await commitLands(started.worktree, before), 'dsh: this-turn.txt');
 });
 
 test('a turn close that arrives carries its own number', async (t) => {
