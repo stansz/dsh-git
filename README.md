@@ -31,7 +31,7 @@ ones that change the outcome:
 | `ctx.tools.register()` | the `git` tool: `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish`, `prune` |
 | `ctx.commands.register()` | `/git`, printing the same state to a human |
 | `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
-| `ctx.on('agent/turn-stopping')` | the automatic sync: at the end of every turn that changed files, commit them and push what is safe to push |
+| `ctx.on('agent/turn-stopping')`, `ctx.on('session/event')`, `ctx.on('tools/pre-execute')` | the automatic sync: at a turn boundary, or a few seconds after a turn's edits stop when no boundary arrives, commit the touched repositories and push what is safe to push |
 
 ## The two automatic behaviours
 
@@ -169,7 +169,7 @@ documented in `lib/guard.mjs` rather than papered over.
 
 | Class | Decision |
 |---|---|
-| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow |
+| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow. A plain `fetch` reads; `--prune`, `--all`, `--tags`, a force flag or a refspec with a destination *writes refs* and is gated like a mutation |
 | mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
 | destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
 
@@ -507,17 +507,20 @@ still works, with a less precise commit subject — and registers on
 
 ## How to see the automatic commit work
 
-Make any edit in a repository and end the turn. `git log` shows a commit whose
-subject starts `dsh: turn <N>` and whose body carries `Assisted-by: DSH`. On a
-protected branch the commit lands and the push is refused with a reason; on a
-`dsh/` worktree branch both happen. `git status` inside the plugin's own
+Make an edit in a repository and stop. A few seconds later `git log` shows a commit
+whose subject starts `dsh: ` and names the files it contains, with
+`Assisted-by: DSH` in the body — or `dsh: turn <N> — <files>` when a real turn
+boundary supplied a number. Ending the turn is not what triggers it, and neither
+is the next tool call. On a protected branch the commit lands and the push is
+refused with a reason; on a `dsh/` worktree branch both happen. `git status` inside the plugin's own
 repository is the fastest check, and `/git` prints the same state in the composer.
 
 The automatic commit is deliberately not narrowed to the files a turn edited.
 Narrowing it would leave one file the turn touched and one it did not, both
 uncommitted, with no later turn likely to notice — and "nothing left
 uncommitted" is the promise this bundle exists to keep. The commit subject names
-the turn, so the result stays attributable.
+the files, so the result stays attributable without claiming a turn that may not
+have existed.
 
 ## Running several sessions at once
 
@@ -567,11 +570,13 @@ and the registry lookup then finds nothing.
 npm test
 ```
 
-`node --test` runs `test/`. Nothing is mocked: every case builds a real
-repository with a real bare origin inside a workspace directory, then drives the
-plugin's own exported functions — `runAction` for the tool actions,
-`evaluateWorktree` through the listener `registerWorktreeGuard` installs, and
-`syncRepo` for the turn boundary — and asserts on real git state: worktree
+`node --test` runs the `test/**/*.test.mjs` glob. Nothing is mocked: every case
+builds a real repository with a real bare origin inside a workspace directory,
+then drives the plugin's own exported functions — `runAction` for the tool
+actions, `evaluateWorktree` through the listener `registerWorktreeGuard`
+installs, `registerTurnSync` against a Host reduced to a handler map for the
+automatic half, and the local primitives the actions rest on (`deleteBranch`,
+`pruneWorktrees`, the pure merge-proof rule) — and asserts on real git state: worktree
 registrations, the branch a worktree has checked out, refs in the bare origin,
 the ownership marker beside a worktree, and the plugin's own state files.
 
