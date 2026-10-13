@@ -36,7 +36,11 @@ test('a merged task is retired: worktree, session record and branch', async (t) 
   const entry = state.readSession(c.sessionId, { stateRoot: c.config.stateRoot }).worktrees[0];
   assert.equal(entry.path, worktree);
 
-  const record = await retireMergedWorktree(c.repoDir, c.config, c.sessionId, entry);
+  // The tip is the caller's proof that this branch is exactly what the pull
+  // request merged. Action merge has it from the API; here it is read the same
+  // way, from the branch.
+  const tip = git(worktree, ['rev-parse', 'HEAD']);
+  const record = await retireMergedWorktree(c.repoDir, c.config, c.sessionId, entry, { tip });
   assert.equal(record.removed, true);
   assert.equal(record.branchRemoved, true, 'the branch goes only because the worktree did');
   assert.equal(existsSync(worktree), false);
@@ -75,6 +79,28 @@ test('a merge that could not happen retires nothing', async (t) => {
   assert.equal(merged.error.code, 'not-github');
   assert.equal(existsSync(started.worktree), true, 'the task is untouched when the merge did not happen');
   assert.equal(state.readSession(c.sessionId, { stateRoot: c.config.stateRoot }).worktrees.length, 1);
+});
+
+test('a merge that did not report its commit leaves the branch where it is', async (t) => {
+  const c = makeCase('merge-retire-no-tip');
+  t.after(() => c.cleanup());
+
+  const started = await runAction('start', { action: 'start', repo: c.repoDir, slug: 'unreported-merge' }, c.context());
+  mkdirSync(join(started.worktree, 'src'), { recursive: true });
+  writeFileSync(join(started.worktree, 'src', 'work.txt'), 'the work\n');
+  git(started.worktree, ['add', '-A']);
+  git(started.worktree, ['-c', 'user.email=x@y.z', '-c', 'user.name=x', 'commit', '-m', 'feat: the work']);
+  const tip = git(started.worktree, ['rev-parse', 'HEAD']);
+  const entry = state.readSession(c.sessionId, { stateRoot: c.config.stateRoot }).worktrees[0];
+
+  // No tip: the pull request is merged, and that is all that is known. The
+  // worktree is clean so it goes, and the branch — the only thing naming that
+  // commit — stays. An absent proof is a refusal, never a weaker deletion.
+  const record = await retireMergedWorktree(c.repoDir, c.config, c.sessionId, entry);
+  assert.equal(record.removed, true);
+  assert.equal(record.branchRemoved, undefined);
+  assert.match(String(record.branchKept), /was not reported/u);
+  assert.equal(git(c.repoDir, ['rev-parse', 'refs/heads/' + entry.branch]), tip);
 });
 
 test('a record pointing at something that is not a worktree is refused', async (t) => {
