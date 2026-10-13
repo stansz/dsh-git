@@ -13,7 +13,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { resolveConfig } from '../lib/config.mjs';
-import { evaluate } from '../lib/guard.mjs';
+import { MUTATING_REASONS, MUTATING_SUBCOMMANDS, evaluate } from '../lib/guard.mjs';
+import { ACTION_NAMES } from '../lib/tool.mjs';
 
 const config = resolveConfig({});
 
@@ -123,5 +124,18 @@ test('guardAsk decides what happens to a command the guard cannot classify', () 
     assert.equal(kindOf('git status'), 'allow');
     assert.equal(kindOf('git commit -am x'), 'deny');
     assert.equal(kindOf('git reset --hard'), 'deny');
+  }
+});
+
+test('every mutating subcommand has a reason, and every reason names a real action', () => {
+  // The two properties lib/guard.mjs promises in its own comments: the reasons
+  // table covers every mutating subcommand, and no reason sends the model to an
+  // action the tool does not have. A missing entry silently falls back to the
+  // generic refusal, and an unknown action name is a dead end.
+  for (const subcommand of MUTATING_SUBCOMMANDS) {
+    const entry = MUTATING_REASONS[subcommand];
+    assert.ok(entry !== undefined, 'MUTATING_REASONS covers ' + subcommand);
+    const named = ACTION_NAMES.filter((action) => entry.reason.includes('action "' + action + '"'));
+    assert.ok(named.length > 0, 'the reason for ' + subcommand + ' names a real git-tool action');
   }
 });
