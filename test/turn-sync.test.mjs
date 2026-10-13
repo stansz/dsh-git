@@ -43,6 +43,34 @@ test('a turn that changed a file is committed and pushed from its own worktree',
   assert.match(git(worktree, ['log', '-1', '--format=%b']), /Assisted-by: DSH/u);
 });
 
+test('a recorder list from the previous turn does not hide this turn\'s repository', async (t) => {
+  const c = makeCase('turn-sync-stale-list');
+  t.after(() => c.cleanup());
+
+  // The recorder announces its summary once per turn, at the turn's end, so while
+  // a turn is running the newest summary belongs to the turn before it. This is
+  // that list: one file from somewhere that is not a repository at all, which is
+  // what an empty resolution looks like from the sync's side.
+  const stale = join(c.root, 'stale-from-last-turn.txt');
+  writeFileSync(stale, 'last turn\n');
+  const file = join(c.repoDir, 'this-turn.txt');
+  writeFileSync(file, 'this turn\n');
+  assert.equal(store.record(c.sessionId, c.repoDir, file, { stateRoot: c.config.stateRoot }), true);
+
+  const synced = await runTurnSync({
+    config: c.config,
+    cwd: c.root,
+    sessionId: c.sessionId,
+    turn: undefined,
+    readPaths: () => [stale],
+  });
+
+  const entry = synced.repos.find((repo) => repo.repo === c.repoDir);
+  assert.ok(entry !== undefined, 'the repository this session changed is in scope, stale list or not');
+  assert.equal(entry.committed, true);
+  assert.equal(entry.subject, 'dsh: this-turn.txt', 'and the commit is named after what it contains');
+});
+
 test('a repository git cannot read is reported, not thrown about', async (t) => {
   const c = makeCase('turn-sync-unreadable');
   t.after(() => c.cleanup());
