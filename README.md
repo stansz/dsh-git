@@ -47,6 +47,21 @@ steps, and the order matters:
 
 A worktree this session owns is always in scope.
 
+**When it runs.** The Host's own turn-end events are the right hook, and this
+deployment does not deliver them: `~/.dsh/state/dsh-git/boundary.log` records
+which boundary fired, and four days of it hold nothing but the tools-layer
+fallback. So the plugin keeps the time itself. Every tool call arms a settle
+timer; when the session has been quiet for a few seconds, the turn is over by any
+definition that matters and the sync runs on its own. A session that keeps calling
+tools never fires it, and a session that stops fires it once, seconds later, with
+no further tool call needed. When a real turn boundary *does* arrive
+(`agent/turn-stopping`, or `session/event` with `turn/end`), it runs the sync
+immediately and the timer then finds nothing left to do.
+
+The commit message names what it contains. A turn number appears only when the
+Host really reported one: the fallback boundary never knew a number, and used to
+print `dsh: turn 0` on every automatic commit it made — a number true of no turn.
+
 The default is `turnSyncScope: 'session'`, and that choice is about more than
 tidiness. Step 3 cannot tell whose work is whose. Once several sessions share a
 checkout — which is what an Agent Team is — "every dirty repository under the
@@ -180,7 +195,7 @@ not a safer setting, because it drops the destructive denials with the rest.
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
 | `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
 | `turnCommit` | `true` | Commit each turn's changes |
-| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
+| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`, or `dsh: <paths>` when the Host reported no turn number (which the fallback boundary never does); `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
 | `turnPush` | `true` | Push each turn when the branch is safe |
 | `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
@@ -318,7 +333,9 @@ for global `fetch`, and `gh` only as an optional token source.
 
 The turn sync is built so that declining to commit is never quiet. A skip, a
 refused push, a timeout and an unexpected failure all produce a message the
-**model** reads — not only a Host log line:
+**model** reads — not only a Host log line. Every boundary reports this,
+including the quiet-period one that does the work in this deployment; that was
+true only of the boundaries that never fire until it was fixed:
 
 ```
 dsh-git could not finish syncing your working tree:

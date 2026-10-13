@@ -18,7 +18,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import * as store from '../lib/session-files.mjs';
@@ -167,12 +167,17 @@ test('a session that keeps calling tools never commits mid-turn', async (t) => {
   const host = fakeHost(c);
   t.after(() => host.dispose());
 
+  // A burst of tool calls, each of which pushes the quiet period out. The claim
+  // is not "no commit happens quickly" — it is that the commit is a function of
+  // the LAST call, so a session that keeps working is never committed halfway
+  // through. The old boundary committed ~2 s after the first call of the burst,
+  // which is what this notices.
   const before = headSubject(c.repoDir);
-  host.toolCall();
-  await wait(SETTLE_MS / 2);
-  host.toolCall();
-  await wait(STILL_BUSY_MS);
-  assert.equal(headSubject(c.repoDir), before, 'the second call pushed the quiet period out');
+  for (let index = 0; index < 8; index += 1) {
+    host.toolCall();
+    await wait(400);
+  }
+  assert.equal(headSubject(c.repoDir), before, 'eight calls over three seconds, and the turn is still open');
   const subject = await commitLands(c.repoDir, before);
   assert.notEqual(subject, before, 'and the turn is closed once the calls really stop');
 });
@@ -210,7 +215,7 @@ test('the sync that runs is the sync that speaks', async (t) => {
 });
 
 test('disposal runs the turn it was holding instead of dropping it', async (t) => {
-  const { c } = dirtyTurn('boundary-dispose');
+  const { c, file } = dirtyTurn('boundary-dispose');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
 
@@ -218,7 +223,13 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
   host.toolCall();
   host.dispose();
   assert.notEqual(await commitLands(c.repoDir, before), before, 'work the plugin was holding when it went away is still committed');
-});
+  // And say who did it. "The work got committed" is also true of a sync that was
+  // already running and would have finished anyway; the point of draining is that
+  // disposal itself runs what it was holding.
+  const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
+  assert.match(log, /dispose drained a pending turn sync/u);
+  assert.match(log, /settled sync repos=1/u);
+  assert.ok(existsSync(file) === false, 'the fixture file is in the commit, not the tree');
 
 test('when the deployment has a recorder, its file list is what is committed', async (t) => {
   const c = makeCase('boundary-recorder');
