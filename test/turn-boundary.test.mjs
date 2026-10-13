@@ -230,6 +230,7 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
   assert.match(log, /dispose drained a pending turn sync/u);
   assert.match(log, /settled sync repos=1/u);
   assert.ok(existsSync(file) === false, 'the fixture file is in the commit, not the tree');
+});
 
 test('when the deployment has a recorder, its file list is what is committed', async (t) => {
   const c = makeCase('boundary-recorder');
@@ -280,9 +281,7 @@ test('the boundary that fires is recorded, whichever one it was', async (t) => {
   host.toolCall();
   host.turnStopping(2);
   await commitLands(c.repoDir, before);
-  const log = git(c.repoDir, ['--version']) !== undefined
-    ? String(await import('node:fs').then((fs) => fs.readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8')))
-    : '';
+  const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
   assert.match(log, /tools\/pre-execute/u);
   assert.match(log, /agent\/turn-stopping/u, 'a boundary that never arrives has to say so, or its silence is indistinguishable from an idle turn');
 });
