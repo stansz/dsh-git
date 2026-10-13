@@ -150,6 +150,13 @@ test('a tool call arms the turn close; the quiet after it is what commits', asyn
   assert.equal(subject, 'dsh: written.txt', 'and it names what it contains instead of claiming a turn');
   assert.match(headBody(c.repoDir), /Assisted-by: DSH/u);
   assert.equal(git(c.repoDir, ['show', '--name-only', '--format=', 'HEAD']), 'written.txt');
+  // The record is dropped by the sync itself, just after the commit it belongs
+  // to becomes visible to another process — so this waits for it rather than
+  // assuming it won a race it is not running.
+  const deadline = Date.now() + 15000;
+  while (store.pathsOf(c.sessionId, c.repoDir, { stateRoot: c.config.stateRoot }).length > 0 && Date.now() < deadline) {
+    await wait(25);
+  }
   assert.deepEqual(store.pathsOf(c.sessionId, c.repoDir, { stateRoot: c.config.stateRoot }), [], 'and the record is done with');
   assert.ok(file.length > 0);
 });
