@@ -473,18 +473,18 @@ git prune apply: true worktrees: [some-slug]
 ```
 
 **A merged task closes itself.** Action `merge` retires the task the moment it
-merges, and at the end of every turn a worktree this session owns whose pull
-request was merged is removed — the directory, the branch, and the branch's
-remote ref, together. That is the automatic half of
-this section, and the reason per-task isolation no longer accumulates: a task
-that finished does not wait to be noticed, and a session that simply stops does
-not leave a directory behind for a human to find.
+merges, and each automatic sync closes a worktree this session owns whose pull
+request merged the commit that branch points at — the directory, the branch, and
+the branch's remote ref when that ref is at the same commit. That is the automatic
+half of this section, and the reason per-task isolation no longer accumulates: a
+task that finished does not wait to be noticed, and a session that simply stops
+does not leave a directory behind for a human to find.
 
 The proof is the same one used everywhere else here — GitHub says a pull request
-from that branch was merged — so nothing is removed on a guess. Unmerged work, a
-failed query, a repository with no remote, and a dirty worktree all mean the same
-thing: leave it alone.
-
+from that branch merged *this commit* — so nothing is removed on a guess. A branch
+that has moved since its merge, a failed query, a repository with no remote, and a
+dirty worktree all mean the same thing: leave it alone, and say which commit was
+not covered.
 
 A path or the directory name both work. A dirty worktree is refused and its files
 are named; the main checkout is never touched; and the branch the removal frees
