@@ -115,7 +115,10 @@ function fakeHost(c, options = {}) {
     },
     get: (name) => services[name],
   };
-  const dispose = registerTurnSync(ctx, options.config ?? c.config, { settleMs: options.settleMs ?? SETTLE_MS });
+  const dispose = registerTurnSync(ctx, options.config ?? c.config, {
+    settleMs: options.settleMs ?? SETTLE_MS,
+    ceilingMs: options.ceilingMs,
+  });
   return {
     agent, injected, woken, warnings, infos, dispose,
     /** One tool call, as the tools layer delivers it. */
@@ -180,6 +183,24 @@ test('a session that keeps calling tools never commits mid-turn', async (t) => {
   assert.equal(headSubject(c.repoDir), before, 'eight calls over three seconds, and the turn is still open');
   const subject = await commitLands(c.repoDir, before);
   assert.notEqual(subject, before, 'and the turn is closed once the calls really stop');
+});
+
+test('a session that never goes quiet is still committed periodically', async (t) => {
+  const { c } = dirtyTurn('boundary-ceiling');
+  t.after(() => c.cleanup());
+  // A quiet period far longer than the test, so only the ceiling can commit.
+  const host = fakeHost(c, { settleMs: 60000, ceilingMs: 300 });
+  t.after(() => host.dispose());
+
+  const before = headSubject(c.repoDir);
+  const deadline = Date.now() + 15000;
+  while (headSubject(c.repoDir) === before && Date.now() < deadline) {
+    host.toolCall();
+    await wait(50);
+  }
+  assert.notEqual(headSubject(c.repoDir), before, 'an unbroken burst of tool calls does not mean nothing is committed');
+  const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
+  assert.match(log, /pre-execute \(ceiling\)/u, 'and the log says which trigger it was');
 });
 
 test('a turn close that arrives carries its own number', async (t) => {
