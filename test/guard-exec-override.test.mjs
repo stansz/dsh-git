@@ -187,3 +187,43 @@ test('D31: real git confirms the premise, part two: a hook directory and a confi
   assert.equal(injectedValue, '/tmp/evil', 'git read the pager from the injected config file');
   assert.equal(kindOf('GIT_CONFIG_GLOBAL=' + injected + ' git log'), 'ask');
 });
+
+test('D40: a pager override names git --no-pager as the way out, and the others do not', () => {
+  // Any program-naming override asks, and that verdict is right: the guard
+  // cannot tell `cat` from a malicious program. A pager is the one case with a
+  // way out that needs no approval at all.
+  const pagerCases = [
+    ["GIT_PAGER='sh -c evil' git log", /GIT_PAGER/u],
+    ['GIT_PAGER=cat git log -1', /GIT_PAGER/u],
+    ["git -c core.pager='sh -c evil' log", /core\.pager/u],
+    ['git -c pager.log=evil log', /pager\.log/u],
+    ['git --config-env=core.pager=PAGER log', /core\.pager/u],
+  ];
+  for (const [command, mechanism] of pagerCases) {
+    const decision = decide(command);
+    assert.equal(decision.kind, 'ask', command + ' still asks: a program cannot be told apart from a safe one');
+    assert.match(decision.reason, /git --no-pager/u, command + ' must name the alternative that needs no approval');
+    assert.match(decision.reason, mechanism, command + ' must still name the mechanism');
+  }
+  // The alternative is real: it is the same read, and the guard already allows it.
+  assert.equal(kindOf('git --no-pager log'), 'allow');
+  assert.equal(kindOf('git --no-pager log -1'), 'allow');
+  assert.equal(kindOf('git --no-pager diff HEAD'), 'allow');
+  // A non-pager override gets no pager advice: `--no-pager` cannot stop an
+  // external diff driver, an editor, a hook or an alias shell command, so the
+  // sentence would be advice that does not solve the problem.
+  for (const command of [
+    'GIT_EXTERNAL_DIFF=/tmp/evil git diff',
+    'GIT_EDITOR=/tmp/evil git log',
+    "git -c alias.zz='!rm -rf /tmp/pwn' zz",
+    'git --exec-path=/tmp/evil status',
+  ]) {
+    const decision = decide(command);
+    assert.equal(decision.kind, 'ask', command);
+    assert.doesNotMatch(decision.reason, /--no-pager/u, command + ' must not be given advice that does not apply');
+  }
+  // And a mutation behind a pager override is still a refusal, not a question.
+  const commit = decide('GIT_PAGER=cat git commit -am x');
+  assert.equal(commit.kind, 'deny', 'a pager override must not soften a mutation');
+  assert.doesNotMatch(commit.reason, /--no-pager/u, 'a refusal names the replacement action, not a pager hint');
+});
