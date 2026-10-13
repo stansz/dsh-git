@@ -13,6 +13,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
+import { turnSubject } from '../lib/render.mjs';
 import { resolveConfig } from '../lib/config.mjs';
 import { pushDecision, runTurnSync, syncRepo } from '../lib/turn-commit.mjs';
 import * as store from '../lib/session-files.mjs';
@@ -64,6 +65,15 @@ test('a repository git cannot read is reported, not thrown about', async (t) => 
   assert.ok(entry !== undefined, 'the repository it could not read is named');
   assert.equal(entry.committed, false);
   assert.ok((entry.notes ?? []).length > 0, 'and the reason is in the report rather than in a throw');
+});
+
+test('a deliberate commit is not named after a turn', () => {
+  // Action "commit" and action "finish" used to build "dsh: turn 0 — <paths>" and
+  // then strip the prefix back out of the string with a replace. No turn is
+  // involved in either of them, and one input — no paths at all — left the
+  // stripped text saying "dsh: turn 0".
+  assert.equal(turnSubject(undefined, []), 'dsh: automatic commit');
+  assert.equal(turnSubject(undefined, ['src/a.mjs', 'b.mjs']), 'dsh: a.mjs, b.mjs');
 });
 
 test('the push rule refuses the branches that would rewrite shared work', () => {
