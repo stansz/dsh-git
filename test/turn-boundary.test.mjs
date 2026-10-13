@@ -215,7 +215,7 @@ test('the sync that runs is the sync that speaks', async (t) => {
 });
 
 test('disposal runs the turn it was holding instead of dropping it', async (t) => {
-  const { c, file } = dirtyTurn('boundary-dispose');
+  const { c } = dirtyTurn('boundary-dispose');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
 
@@ -226,10 +226,17 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
   // And say who did it. "The work got committed" is also true of a sync that was
   // already running and would have finished anyway; the point of draining is that
   // disposal itself runs what it was holding.
-  const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
+  // The commit is visible to another process before the sync has finished its
+  // last step, so the log line is waited for rather than assumed.
+  const logPath = join(c.root, 'state', 'dsh-git', 'boundary.log');
+  const deadline = Date.now() + 15000;
+  while (!/settled sync repos=1/u.test(readFileSync(logPath, 'utf8')) && Date.now() < deadline) {
+    await wait(25);
+  }
+  const log = readFileSync(logPath, 'utf8');
   assert.match(log, /dispose drained a pending turn sync/u);
-  assert.match(log, /settled sync repos=1/u);
-  assert.ok(existsSync(file) === false, 'the fixture file is in the commit, not the tree');
+  assert.match(log, /settled sync repos=1/u, 'the drained sync really ran, and said so');
+  assert.equal(git(c.repoDir, ['status', '--porcelain=v1']), '', 'and the work is in the commit rather than the tree');
 });
 
 test('when the deployment has a recorder, its file list is what is committed', async (t) => {
