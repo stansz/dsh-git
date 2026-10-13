@@ -142,7 +142,10 @@ test('a tool call arms the turn close; the quiet after it is what commits', asyn
   const { c, file } = dirtyTurn('boundary-settles');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = headSubject(c.repoDir);
   host.toolCall();
@@ -169,7 +172,10 @@ test('a session that keeps calling tools never commits mid-turn', async (t) => {
   const { c } = dirtyTurn('boundary-busy');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   // A burst of tool calls, each of which pushes the quiet period out. The claim
   // is not "no commit happens quickly" — it is that the commit is a function of
@@ -191,7 +197,10 @@ test('a session that never goes quiet is still committed periodically', async (t
   t.after(() => c.cleanup());
   // A quiet period far longer than the test, so only the ceiling can commit.
   const host = fakeHost(c, { settleMs: 60000, ceilingMs: 300 });
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = headSubject(c.repoDir);
   const deadline = Date.now() + 15000;
@@ -202,6 +211,22 @@ test('a session that never goes quiet is still committed periodically', async (t
   assert.notEqual(headSubject(c.repoDir), before, 'an unbroken burst of tool calls does not mean nothing is committed');
   const log = readFileSync(join(c.root, 'state', 'dsh-git', 'boundary.log'), 'utf8');
   assert.match(log, /pre-execute \(ceiling\)/u, 'and the log says which trigger it was');
+});
+
+test('a disposed host does not write a case back after it was cleaned up', async (t) => {
+  const { c } = dirtyTurn('boundary-teardown');
+  const host = fakeHost(c);
+  host.toolCall();
+
+  // Disposal starts the sync it was holding, and that sync writes to this case's
+  // own state directory — so a cleanup that runs before it finishes is undone by
+  // writes that land afterwards. That is how test scratch survived in the
+  // workspace after a run: the case directory came back, and the suite's own root
+  // cleanup then refused to sweep a root that was not empty.
+  await host.dispose();
+  c.cleanup();
+  await wait(250);
+  assert.equal(existsSync(c.root), false, 'the case is gone, and nothing wrote it back');
 });
 
 test('a stale recorder list does not empty the commit subject', async (t) => {
@@ -220,7 +245,10 @@ test('a stale recorder list does not empty the commit subject', async (t) => {
   assert.equal(store.record(c.sessionId, started.worktree, file, { stateRoot: c.config.stateRoot }), true);
 
   const host = fakeHost(c, { recorder: { files: [stale] } });
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = git(started.worktree, ['log', '-1', '--format=%s']);
   host.toolCall();
@@ -231,7 +259,10 @@ test('a turn close that arrives carries its own number', async (t) => {
   const { c } = dirtyTurn('boundary-real-event');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = headSubject(c.repoDir);
   host.turnStopping(3);
@@ -245,7 +276,10 @@ test('the sync that runs is the sync that speaks', async (t) => {
   // has something it must report. Before this was fixed the path that actually
   // ran said it to a log file and to nobody else.
   const host = fakeHost(c, { config: { ...c.config, turnCommit: false } });
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   host.toolCall();
   const deadline = Date.now() + 15000;
@@ -293,7 +327,10 @@ test('when the deployment has a recorder, its file list is what is committed', a
   // can be reached is through the recorder's summary, which is the branch under
   // test.
   const host = fakeHost(c, { recorder: { files: [file] } });
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = headSubject(c.repoDir);
   host.toolCall();
@@ -327,7 +364,10 @@ test('the boundary that fires is recorded, whichever one it was', async (t) => {
   const { c } = dirtyTurn('boundary-diagnostics');
   t.after(() => c.cleanup());
   const host = fakeHost(c);
-  t.after(() => host.dispose());
+  t.after(async () => {
+    await host.dispose();
+    c.cleanup();
+  });
 
   const before = headSubject(c.repoDir);
   host.toolCall();
