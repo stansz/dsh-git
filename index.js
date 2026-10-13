@@ -218,5 +218,5 @@ function registerGuard(ctx, config) {
   });
 }
 
-/** Exported for the self-check, which asserts the defaults the plugin ships with. */
+/** The defaults the plugin ships with, exported so a caller or a test can check them. */
 export { DEFAULT_CONFIG };

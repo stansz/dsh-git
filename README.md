@@ -202,7 +202,7 @@ not a safer setting, because it drops the destructive denials with the rest.
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
 | `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
 | `turnCommit` | `true` | Commit each turn's changes |
-| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`, or `dsh: <paths>` when the Host reported no turn number (which the fallback boundary never does); `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
+| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>` when a turn boundary reported a number, and `dsh: <paths>` otherwise — which is always, for the boundary driven from the tools layer; `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
 | `turnPush` | `true` | Push each turn when the branch is safe |
 | `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
@@ -433,8 +433,8 @@ first task's name, and a rule that matched on the name alone deleted its newest
 commit, silently, on a sweep that was only supposed to tidy up. Now that branch is
 kept, and the report says a merged pull request exists for the name but covers a
 different commit. The same rule guards the remote ref, which is deleted only when
-it points at that same commit, and it guards the worktree close that runs
-automatically at the end of every turn.
+it points at that same commit, and it guards the worktree close that every
+automatic sync performs.
 
 **Two leftovers cannot be proven disposable locally.** A squash merge rewrites a
 branch's commits, so its content is in the base while its commits are not; and a
