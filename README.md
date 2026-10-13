@@ -122,6 +122,14 @@ branch under `protected`, a path outside any repository, and a shell command —
 reading a shell command well enough to know whether it writes a file is the same
 unbounded problem the git guard already documents as best-effort.
 
+**Where a write lands, not how it is spelled.** The verdict follows the path through
+its symlinks: a link inside the worktree that points at the main checkout makes that
+write a write into main, so it is refused, while a new file whose path only passes
+through a symlinked directory that resolves back inside the worktree is allowed. The
+same question decides whether `always` thinks this session has a worktree here at
+all — the edit has to land inside one of the paths the session registered, never on a
+root that merely looks equal.
+
 ## Worktrees
 
 One task, one worktree, at `<worktreeRoot>/<repo>/<slug>` on branch `dsh/<slug>`
@@ -141,7 +149,12 @@ to move them, and keep the value outside every repository. See
 - A branch checked out more than once is refused, never forced.
 - Removal never uses `--force` on its own and never `rm -rf`. A dirty worktree
   is refused with the uncommitted paths named, and the lock goes back on.
-- A worktree this plugin did not create is never touched.
+- A live worktree this plugin did not create is never removed. Naming it is not
+  permission: without an ownership marker beside it the removal is refused and the
+  worktree reported — dirty or clean — unless the call says `force: true`. The one
+  exception is a *registration* whose directory is already gone: it holds no work at
+  all, so the sweep clears it and releases the lock, which is the only way such an
+  entry ever disappears.
 - `finish --cleanup` closes the worktree only after committing what was in it *and*
   getting it onto the remote: a push that failed or was never attempted keeps the
   worktree and reports why, because a worktree with no published copy of its
@@ -172,6 +185,29 @@ documented in `lib/guard.mjs` rather than papered over.
 | read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow. A plain `fetch` reads; `--prune`, `--all`, `--tags`, a force flag or a refspec with a destination *writes refs* and is gated like a mutation |
 | mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
 | destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
+
+The class is decided from a parsed command line, not from the text of its tokens. A
+value belongs to its option whatever it looks like, `--` ends the options, and the
+verb is the first operand: `git clean -fenodeModules -d` is a forced clean and not a
+dry run, `git tag -m '--delete' v1` creates a tag whose *message* is `--delete`, and
+`git push -o -f origin main` is a push to a protected branch rather than a force
+push, because git consumed `-f` as the value of `-o`. The same parse is why
+`git worktree add -b list ../wt` and `git stash push -m list` are the mutations they
+are, and why a read form does not become a mutation because a value happens to spell
+one.
+
+A mutating subcommand the tool has no action for is denied too, rather than waved
+through because no action replaces it: `git config --add core.hooksPath …`,
+`git remote set-url`, `git reflog delete`, `git tag v1.0`, `git gc`,
+`git repack`, `git maintenance run`, `git submodule add`,
+`git sparse-checkout set`, `git notes remove`, `git lfs push`,
+`git send-email`, `git format-patch`. Each reason says so plainly — the tool cannot
+make that change for you, and `guardMode` (`warn` or `off`) is the deliberate escape
+hatch. The read forms stay allowed: `git tag -l`, `git remote -v`,
+`git config --get`, `git reflog`, `git submodule status`,
+`git sparse-checkout list`. `git config` writing `core.hooksPath` is the sharpest of
+them: hooks run on the *next* git command, so what would be executing is somebody
+else's program, with the guard watching the wrong process.
 
 `deny` outranks `ask` anywhere in one command line, so `git status && git reset
 --hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
@@ -471,6 +507,22 @@ branch cannot be removed while it is checked out there. Name it:
 ```
 git prune apply: true worktrees: [some-slug]
 ```
+
+Naming a worktree is not permission to remove somebody else's. Ownership is the
+marker this plugin writes beside a worktree it created: a worktree with no marker is
+reported and left exactly as it stands — in the dry run and under `apply: true`
+alike — with its dirty paths named if it has any, and nothing is unlocked on the way.
+The deliberate door for the case a marker cannot answer (a plugin worktree whose
+marker was deleted by hand, or one you have decided to clear yourself) is
+`force: true`:
+
+```
+git prune apply: true worktrees: [some-slug] force: true
+```
+
+`force` overrides ownership and nothing else: the main checkout is still refused, a
+dirty worktree is still refused with its files named, and a removal that happened
+under it is reported as forced.
 
 **A merged task closes itself.** Action `merge` retires the task the moment it
 merges, and each automatic sync closes a worktree this session owns whose pull
