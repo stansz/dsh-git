@@ -47,6 +47,28 @@ steps, and the order matters:
 
 A worktree this session owns is always in scope.
 
+**When it runs.** Every tool call arms a settle timer. When the session has been
+quiet for a few seconds its edits have stopped, and the sync runs on its own, with
+no further tool call needed. A session in an unbroken burst of tool calls is still
+committed every minute, so nothing is ever more than a minute away from a commit.
+
+The Host's own turn end — `session/event` carrying `turn/end`, and
+`agent/turn-stopping` where the deployment delivers it — is the primary hook and
+runs the same sync immediately. The timer covers the case where it does not, and
+whichever of the two runs second finds nothing to do. This is worth stating
+plainly, because the first reading of this deployment had it backwards: the
+plugin's own `boundary.log` records only the tools-layer fallback, which is not
+evidence about the other two boundaries at all. The Host's session log carries
+`turn/end` for every session.
+
+What *was* wrong was the fallback's timing and its message. It ran at the start of
+the next tool call, at most once a minute, so in a long turn it was the fallback
+that committed — mid-turn, up to a minute after the edits, several times over —
+and it always named the commit after a turn number it never had. Eight such
+commits landed in a single two-hour turn, and not one of them was a turn. The
+message now names what the commit contains; a turn number appears only when the
+Host really reported one.
+
 The default is `turnSyncScope: 'session'`, and that choice is about more than
 tidiness. Step 3 cannot tell whose work is whose. Once several sessions share a
 checkout — which is what an Agent Team is — "every dirty repository under the
@@ -180,7 +202,7 @@ not a safer setting, because it drops the destructive denials with the rest.
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
 | `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
 | `turnCommit` | `true` | Commit each turn's changes |
-| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`; `{turn}` and `{paths}` are substituted |
+| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`, or `dsh: <paths>` when the Host reported no turn number (which the fallback boundary never does); `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
 | `turnPush` | `true` | Push each turn when the branch is safe |
 | `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
@@ -318,7 +340,10 @@ for global `fetch`, and `gh` only as an optional token source.
 
 The turn sync is built so that declining to commit is never quiet. A skip, a
 refused push, a timeout and an unexpected failure all produce a message the
-**model** reads — not only a Host log line:
+**model** reads — not only a Host log line. Every boundary reports this, including
+the tools-layer one that does most of the committing. It used to write its
+failures to a log file and to nobody else, which made "reported, not silent" true
+of the hooks that do the least work and false of the one that does the most:
 
 ```
 dsh-git could not finish syncing your working tree:
