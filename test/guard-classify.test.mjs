@@ -42,6 +42,13 @@ test('read-only git is allowed, including the plumbing a session asks for', () =
     'git var GIT_AUTHOR_IDENT',
     'git annotate -L 1,5 lib/guard.mjs',
     'git patch-id --stable',
+    'git check-ref-format --branch dsh/x',
+    'git fsck --no-progress',
+    'git archive HEAD',
+    'git bundle list-heads base.bundle',
+    'git bundle verify base.bundle',
+    'git hash-object README.md',
+    'git bisect log',
   ];
   for (const command of reads) {
     assert.equal(verdict(command), 'allow', command + ' must not be gated');
@@ -73,4 +80,48 @@ test('a subcommand the table cannot classify is asked about, never denied', () =
   assert.equal(verdict('git something-nobody-has-classified'), 'ask');
   assert.equal(verdict('echo hello'), 'allow');
   assert.equal(verdict('git status') === 'allow' && verdict('ls -la') === 'allow', true);
+});
+
+test('the readers that write in one form are gated in that form', () => {
+  const writes = [
+    'git bundle create base.bundle main',
+    'git bundle unbundle base.bundle',
+    'git hash-object -w README.md',
+    'git fsck --lost-found',
+    'git bisect start',
+    'git bisect bad',
+  ];
+  for (const command of writes) {
+    assert.equal(verdict(command), 'deny', command + ' writes, so it is refused rather than read');
+  }
+  // The read form of the same subcommand is not caught by the same rule.
+  assert.equal(verdict('git bisect log'), 'allow');
+  assert.equal(verdict('git bundle verify base.bundle'), 'allow');
+  assert.equal(verdict('git hash-object README.md'), 'allow');
+});
+
+test('guardAsk decides what happens to a command the guard cannot classify', () => {
+  const command = 'git something-nobody-has-classified';
+  const decide = (guardAsk) => evaluate({ name: 'bash', arguments: { command } }, resolveConfig({ guardAsk }));
+
+  assert.equal(decide(undefined).kind, 'ask', 'the default leaves the decision to a person');
+  assert.equal(decide('allow').kind, 'allow');
+
+  const denied = decide('deny');
+  assert.equal(denied.kind, 'deny', 'an unattended deployment refuses instead of stalling');
+  assert.match(denied.reason, /guardAsk/u, 'and says which setting refused it');
+  assert.match(String(denied.displayReason), /deny/u);
+
+  // A malformed value is not a way to relax the guard.
+  assert.equal(decide('yes-please').kind, 'ask');
+
+  // The policy is only about the unclassifiable case: reads still read, and what
+  // discards work is refused whatever it says.
+  for (const guardAsk of ['ask', 'deny', 'allow']) {
+    const config = resolveConfig({ guardAsk });
+    const kindOf = (cmd) => evaluate({ name: 'bash', arguments: { command: cmd } }, config).kind;
+    assert.equal(kindOf('git status'), 'allow');
+    assert.equal(kindOf('git commit -am x'), 'deny');
+    assert.equal(kindOf('git reset --hard'), 'deny');
+  }
 });

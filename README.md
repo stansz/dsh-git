@@ -151,10 +151,17 @@ documented in `lib/guard.mjs` rather than papered over.
 `deny` outranks `ask` anywhere in one command line, so `git status && git reset
 --hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
 classify: refusing an operation nobody understands would block work for no stated
-reason. `guardMode: off` disables the guard entirely; `warn` classifies and then
-allows everything, which makes it a diagnostic for seeing what a session reaches
-for — not a safer setting, because it drops the destructive denials with the
-rest.
+reason.
+
+That last verdict is the only one that needs a person, so `guardAsk` decides what
+happens when there is nobody to ask. The default, `ask`, waits for an answer —
+right when somebody is watching, and a stalled turn when nobody is. `deny`
+refuses the command with the reason attached, so an unattended session fails fast
+and learns which action to call instead. `allow` accepts it.
+
+`guardMode: off` disables the guard entirely; `warn` classifies and then allows
+everything, which makes it a diagnostic for seeing what a session reaches for —
+not a safer setting, because it drops the destructive denials with the rest.
 
 ## Settings
 
@@ -166,6 +173,7 @@ rest.
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
 | `protectedBranches` | `[main, master]` | Never pushed automatically |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
+| `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow`. Set `deny` where nobody is at the approval prompt, so a turn fails fast with a reason instead of stalling |
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
 | `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
 | `turnCommit` | `true` | Commit each turn's changes |
