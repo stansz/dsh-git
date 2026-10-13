@@ -130,7 +130,10 @@ export function apply(ctx, config) {
   // commit a repository the session never actually changed.
   registerWorktreeGuard(ctx, resolveConfig(config), { cwdOf: (agent) => sessionCwd(ctx, agent) });
   registerGuard(ctx, config);
-  registerTurnSync(ctx, config);
+  // The disposer is registered rather than dropped. The sync arms a timer for the
+  // quiet period that ends a turn, and a timer that outlived the plugin would
+  // commit against a configuration that no longer exists.
+  ctx.effect(() => registerTurnSync(ctx, config), 'turn sync registration');
 
   // Record which files this session changes, so the turn-end commit knows which
   // repositories are its own. Without this the turn end has to guess, and the
