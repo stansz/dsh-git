@@ -60,15 +60,30 @@ function fakeHost(c, options = {}) {
     inject: (message) => injected.push(message),
     followup: () => woken.push(Date.now()),
   };
+  // The two optional services decide which source names the commit. With a
+  // recorder, its per-turn file list is the precise one; without it the plugin
+  // falls back to this session's own touched-file store. Both are exercised.
+  const session = options.recorder === undefined
+    ? { id: c.sessionId, header: { cwd: c.reference } }
+    : {
+      id: c.sessionId,
+      header: { cwd: c.reference },
+      seq: 1,
+      eventAt: () => ({ type: 'workspace/changes' }),
+    };
+  const services = {
+    sessions: { get: () => session },
+    workspaceChanges: options.recorder === undefined
+      ? undefined
+      : { summary: () => ({ files: options.recorder.files.map((path) => ({ path })) }) },
+  };
   const ctx = {
     on: (name, handler) => { handlers.set(name, handler); },
     logger: {
       info: (line) => infos.push(String(line)),
       warn: (line) => warnings.push(String(line)),
     },
-    get: (name) => (name === 'sessions'
-      ? { get: () => ({ id: c.sessionId, header: { cwd: c.reference } }) }
-      : undefined),
+    get: (name) => services[name],
   };
   const dispose = registerTurnSync(ctx, options.config ?? c.config, { settleMs: options.settleMs ?? SETTLE_MS });
   return {
@@ -167,6 +182,22 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
   host.dispose();
   await wait(SETTLE_MS * 5);
   assert.notEqual(headSubject(c.repoDir), before, 'work the plugin was holding when it went away is still committed');
+});
+
+test('when the deployment has a recorder, its file list is what is committed', async (t) => {
+  const c = makeCase('boundary-recorder');
+  t.after(() => c.cleanup());
+  const file = join(c.repoDir, 'from-recorder.txt');
+  writeFileSync(file, 'reported by the recorder\n');
+  // Deliberately NOT recorded in the session store: the only way this repository
+  // can be reached is through the recorder's summary, which is the branch under
+  // test.
+  const host = fakeHost(c, { recorder: { files: [file] } });
+  t.after(() => host.dispose());
+
+  host.toolCall();
+  await wait(SETTLE_MS * 4);
+  assert.equal(headSubject(c.repoDir), 'dsh: from-recorder.txt');
 });
 
 test('an automatic commit with no turn reported is named by its contents', async (t) => {
