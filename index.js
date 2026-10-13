@@ -32,7 +32,7 @@
  */
 
 import { createGitTool, sessionDirectory } from './lib/tool.mjs';
-import { buildConfig, resolveConfig, DEFAULT_CONFIG } from './lib/config.mjs';
+import { buildConfig, resolveConfig } from './lib/config.mjs';
 import { runAction } from './lib/actions.mjs';
 import { evaluate } from './lib/guard.mjs';
 import { render, summarize } from './lib/render.mjs';
@@ -217,6 +217,3 @@ function registerGuard(ctx, config) {
     return { kind: 'ask', reason: decision.reason, displayReason: { en: decision.displayReason } };
   });
 }
-
-/** The defaults the plugin ships with, exported so a caller or a test can check them. */
-export { DEFAULT_CONFIG };

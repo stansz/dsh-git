@@ -10,6 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runAction } from '../lib/actions.mjs';
+import { createGitTool } from '../lib/tool.mjs';
 import { makeCase } from './helpers.mjs';
 
 test('pr and merge report their own action when the remote is not GitHub', async (t) => {
@@ -28,4 +29,21 @@ test('pr and merge report their own action when the remote is not GitHub', async
 
   const finish = await runAction('finish', { action: 'finish', repo: c.repoDir }, c.context());
   assert.equal(finish.action, 'finish');
+});
+
+test('the declared output schema is permissive, so it cannot reject a real result', () => {
+  // lib/tool.mjs documents this schema as a floor rather than a contract. A
+  // required field, or a closed object, would turn a real result into an error
+  // the model cannot read — the failure mode the shape exists to prevent.
+  const tool = createGitTool({ get: () => undefined }, {});
+  const walk = (node, where) => {
+    if (node === null || typeof node !== 'object') return;
+    if (node.type === 'object') {
+      assert.notEqual(node.additionalProperties, false, where + ' allows additional properties');
+      assert.equal(node.required, undefined, where + ' requires nothing');
+      for (const [key, child] of Object.entries(node.properties ?? {})) walk(child, where + '.' + key);
+    }
+    if (node.type === 'array' && node.items !== undefined) walk(node.items, where + '[]');
+  };
+  walk(tool.output.schema, 'output');
 });

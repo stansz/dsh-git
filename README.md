@@ -289,9 +289,10 @@ The bundle is built to install anywhere:
   not get git state written to the old one.
 - **No machine path is baked in.** No absolute imports, no `file://` imports, no
   authoring-machine home, no `app.asar` reference.
-- **Every file it imports ships.** `package.json`'s `files` allowlist is checked
-  against the actual import graph, so a published install cannot be missing a
-  module the working tree happened to have.
+- **Every file it imports ships.** `package.json`'s `files` allowlist names
+  `index.js`, `lib/`, `locale/` and `icon.svg` — the whole runtime — and every import
+  in it is relative or a `node:` builtin, so an install carries what the entry points
+  load.
 - **It loads with nothing installed.** The one declared dependency is
   `@deepseek-ai/schemastery`, and it is loaded through `createRequire` probes
   rather than a static import, so the plugin mounts and works without it.
@@ -386,6 +387,25 @@ dsh-git could not finish syncing your working tree:
   - dsh-git: skipped the automatic commit: 340 changed paths, above the limit of 200
 Run the git tool with action "status" to see the current state, and action
 "commit" or action "push" to finish the work by hand.
+```
+
+Declining to commit is not the only thing it reports. A repository that is dirty but
+that this session never changed is *left* uncommitted on purpose: with the default
+`turnSyncScope: "session"` the sync touches only repositories this session recorded,
+because committing somebody else's work in progress is worse than leaving it. What used
+to be silent is now said:
+
+```
+dsh-git could not finish syncing your working tree:
+dsh-git left 1 dirty repository uncommitted:
+  - other-repo (/workspace/other-repo): dirty and never recorded by this session, so it was left uncommitted (turnSyncScope: "session")
+This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "commit") if it is yours, and leave it alone if it is not.
+Run the git tool with action "status" to see the current state, and action "commit" or action "push" to finish the work by hand.
+```
+
+Work written through `bash` is the case this exists for: the recorder only sees the file
+tools, so a repository changed that way and never touched again is exactly the one the
+sync has to mention rather than quietly skip.
 ```
 
 Reaching the model takes two steps, and both are deliberate: `agent.inject()`
@@ -538,11 +558,18 @@ that has moved since its merge, a failed query, a repository with no remote, and
 dirty worktree all mean the same thing: leave it alone, and say which commit was
 not covered.
 
-A path or the directory name both work. A dirty worktree is refused and its files
+A full path always works, and a directory name works when exactly one worktree has it:
+an ambiguous name removes neither, and names both candidates, because removing the wrong
+one is worse than a refusal. A dirty worktree is refused and its files
 are named; the main checkout is never touched; and the branch the removal frees
 is removed with it when it holds no commit of its own. Set `autoWorktree` to
 `protected` or `always` and this is the closing move that keeps the isolation
-from turning into a directory per abandoned task.
+from turning into a directory per abandoned task. A branch counts as this plugin's own
+only when `branchPrefix` ends at a separator - the rule governs the whole namespace, not
+just removals: the automatic push decision, the prune sweep and the remote-branch cleanup
+all apply it - so a prefix `task` never claims a user branch named `taskforce`. When a removal
+leaves the `<worktreeRoot>/<repo>/` directory
+holding nothing but Finder metadata, the directory goes with it.
 
 ## Requirements
 
