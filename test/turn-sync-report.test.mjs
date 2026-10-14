@@ -37,13 +37,17 @@ import { git, makeCase } from './helpers.mjs';
 const SETTLE_MS = 200;
 
 /**
- * The two-second wait D29 measured, with room to tell "did not wait" from
- * "waited": a run that spends it takes at least 2000 ms, and the real sync
- * around it takes a few hundred. Generous on purpose — the suite runs its files
- * in parallel, and this asserts the absence of a two-second stall, not a
- * scheduler's precision.
+ * How much longer the silent-recorder settle may take than the same settle with
+ * no recorder to wait for at all.
+ *
+ * Relative on purpose. An absolute bound measured the machine rather than the
+ * plugin: under three concurrent suites the same path took 1601–2437 ms against
+ * a 1500 ms bound while the two-second wait was provably unreachable, so the
+ * case failed on a busy machine and passed on an idle one. A regressed wait is a
+ * 2000 ms step change, which a baseline measured on the same machine cannot
+ * absorb.
  */
-const WAIT_BOUND_MS = 1500;
+const WAIT_MARGIN_MS = 1000;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -146,21 +150,40 @@ function otherRepo(c) {
 }
 
 test('a settled sync does not spend the two-second wait on a recorder that cannot answer', async (t) => {
-  const c = makeCase('report-silent-recorder');
-  const file = join(c.repoDir, 'written.txt');
-  writeFileSync(file, 'written during a turn\n');
-  assert.equal(record(c.sessionId, c.repoDir, file, { stateRoot: c.config.stateRoot }), true);
-  const host = fakeHost(c, { recorder: 'silent' });
+  // Two settles, back to back on this machine: the baseline has no readPaths at
+  // all, so the wait is unreachable by construction, and the other has a recorder
+  // that cannot answer — the D29 case. Comparing them is what makes the
+  // assertion about the plugin instead of about the load on the machine.
+  const baselineCase = makeCase('report-silent-recorder-baseline');
+  const silentCase = makeCase('report-silent-recorder');
+  const hosts = [];
   t.after(async () => {
-    await host.dispose();
-    c.cleanup();
+    for (const host of hosts) await host.dispose();
+    baselineCase.cleanup();
+    silentCase.cleanup();
   });
 
-  host.toolCall();
-  assert.equal(await until(() => settledElapsedMs(c) !== undefined), true, 'the settled sync really ran');
-  const elapsed = settledElapsedMs(c);
-  assert.ok(elapsed < WAIT_BOUND_MS, 'the wait is not spent on an answer that is not coming: ' + String(elapsed) + 'ms');
-  assert.equal(headSubject(c.repoDir), 'dsh: written.txt', 'and the work is still committed, as before');
+  /** One recorded turn, one tool call, and the interval the settle really took. */
+  const settleOnce = async (c, options) => {
+    const file = join(c.repoDir, 'written.txt');
+    writeFileSync(file, 'written during a turn\n');
+    assert.equal(record(c.sessionId, c.repoDir, file, { stateRoot: c.config.stateRoot }), true);
+    const host = fakeHost(c, options);
+    hosts.push(host);
+    host.toolCall();
+    assert.equal(await until(() => settledElapsedMs(c) !== undefined), true, 'the settled sync really ran');
+    return settledElapsedMs(c);
+  };
+
+  const baseline = await settleOnce(baselineCase, {});
+  const elapsed = await settleOnce(silentCase, { recorder: 'silent' });
+
+  assert.equal(headSubject(silentCase.repoDir), 'dsh: written.txt', 'and the work is still committed, as before');
+  assert.ok(
+    elapsed < baseline + WAIT_MARGIN_MS,
+    'the wait is not spent on an answer that is not coming: ' + String(elapsed)
+      + 'ms against a baseline of ' + String(baseline) + 'ms',
+  );
 });
 
 test('a recorder that answers late is still waited for at a turn boundary', async (t) => {
@@ -183,6 +206,10 @@ test('a recorder that answers late is still waited for at a turn boundary', asyn
 
 test('a dirty repository this session never recorded is reported and left uncommitted', async (t) => {
   const c = makeCase('report-left-alone');
+  // The case has to go, or the suite's own root sweep finds a directory that is
+  // not empty and refuses to remove the root — which is how three cases from this
+  // file ended up left in the workspace after every run.
+  t.after(() => c.cleanup());
   const config = { ...c.config, turnPush: false };
   // The session's own repository: recorded, dirty, and committed by the sync.
   const mine = join(c.repoDir, 'mine.txt');
@@ -209,6 +236,7 @@ test('a dirty repository this session never recorded is reported and left uncomm
 
 test('the workspace scope has nothing left alone, because it commits every dirty repository', async (t) => {
   const c = makeCase('report-workspace-scope');
+  t.after(() => c.cleanup());
   const config = { ...c.config, turnSyncScope: 'workspace', turnPush: false };
   const other = otherRepo(c);
 
@@ -265,10 +293,21 @@ test('a push failure whose backoff could not be recorded does not promise a sche
   // what cannot happen is storing the backoff — and because nothing lands on
   // disk, `shouldRetryPush` will answer true and the next sync retries at once.
   const sessions = join(config.stateRoot, 'dsh-git', 'sessions');
+  // The write bit comes back before anything tries to remove this case, and this
+  // hook is registered before the chmod that takes it away. A case left read-only
+  // cannot be removed by a later run — not even by rm -rf — so a failure between
+  // the chmod and the hook that used to undo it left a case that poisoned the
+  // next run in that root with ENOTEMPTY.
+  t.after(() => {
+    try {
+      chmodSync(sessions, 0o700);
+    } catch {
+      /* the case is already gone */
+    }
+  });
   chmodSync(sessions, 0o500);
   const host = fakeHost(c, { config });
   t.after(async () => {
-    chmodSync(sessions, 0o700);
     await host.dispose();
     c.cleanup();
   });
@@ -284,6 +323,7 @@ test('a push failure whose backoff could not be recorded does not promise a sche
 
 test('a recorded push failure still reads as the scheduled attempt it is', async (t) => {
   const { c, worktree } = await pushFailsCase('push-recorded', 'recorded');
+  t.after(() => c.cleanup());
 
   const synced = await runTurnSync({ config: c.config, cwd: c.root, sessionId: c.sessionId, turn: undefined });
   const entry = synced.repos.find((candidate) => candidate.repo === worktree);

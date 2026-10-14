@@ -120,13 +120,16 @@ function noticeCase(name) {
 
 test('one trigger produces one notice', async (t) => {
   const { c, config } = noticeCase('sync-notice-one');
-  t.after(() => c.cleanup());
-  const { observed, run } = heldSync();
-  const host = fakeHost(c, { config, runSync: run });
+  // One hook, and it disposes before it removes the case: node runs after hooks
+  // in registration order, so a bare cleanup registered first would race the sync
+  // this case starts.
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  const { observed, run } = heldSync();
+  host = fakeHost(c, { config, runSync: run });
 
   host.toolCall();
   assert.equal(await until(() => host.injected.length >= 1), true, 'the settled run reported something');
@@ -143,14 +146,14 @@ test('one trigger produces one notice', async (t) => {
 
 test('three requests folded into one run produce one notice per run', async (t) => {
   const { c, config } = noticeCase('sync-notice-fold');
-  t.after(() => c.cleanup());
-  const { observed, run, releaseFirstRun } = heldSync({ holdFirst: true });
-  const host = fakeHost(c, { config, runSync: run });
+  let host;
   t.after(async () => {
     releaseFirstRun();
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  const { observed, run, releaseFirstRun } = heldSync({ holdFirst: true });
+  host = fakeHost(c, { config, runSync: run });
 
   // Trigger one: a tool call, and the quiet period it arms.
   host.toolCall();

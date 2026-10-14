@@ -252,7 +252,10 @@ test('a lock a killed writer left behind is broken, not waited on forever', (t) 
     true,
     'the abandoned lock is broken and the record is written',
   );
-  assert.ok(Date.now() - started < 1000, 'and it did not wait out the deadline first');
+  // Faster than the deadline it declined to wait out — the same claim as before,
+  // expressed against the deadline rather than against an absolute second, which
+  // a loaded machine can spend on its own.
+  assert.ok(Date.now() - started < LOCK_DEADLINE_MS - 500, 'and it did not wait out the deadline first');
   assert.equal(existsSync(lock), false, 'the abandoned lock is gone');
 });
 
