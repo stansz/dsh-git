@@ -145,6 +145,14 @@ function fakeHost(c, options = {}) {
 function otherRepo(c) {
   const dir = join(c.root, 'other');
   git(c.root, ['clone', c.originDir, dir]);
+  // The identity is set here for the same reason makeCase sets it in the main fixture:
+  // without it this case silently depends on the machine's global git config. It passed
+  // on a developer machine that has one and failed on every CI runner, which has none -
+  // the automatic commit cannot run, so the repository the workspace scope is supposed to
+  // commit is not committed and the case fails for a reason that has nothing to do with
+  // the plugin.
+  git(dir, ['config', 'user.email', 'suite@example.invalid']);
+  git(dir, ['config', 'user.name', 'dsh-git suite']);
   writeFileSync(join(dir, 'theirs.txt'), 'written without the file tools\n');
   return dir;
 }
