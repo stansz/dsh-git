@@ -33,229 +33,44 @@ ones that change the outcome:
 | `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
 | `ctx.on('agent/turn-stopping')`, `ctx.on('session/event')`, `ctx.on('tools/pre-execute')` | the automatic sync: at a turn boundary, or a few seconds after a turn's edits stop when no boundary arrives, commit the touched repositories and push what is safe to push |
 
-## The two automatic behaviours
+## The git tool
 
-**Turn commit.** At the end of every turn that changed a file, each touched
-repository is committed. *Which* repositories were touched is decided in three
-steps, and the order matters:
+One tool, nine actions. The model sees the full description of each; this is the shape of
+them.
 
-1. the shipped `@deepseek-ai/dsh-workspace-changes` recorder's file list for that
-   turn, reconciled to repositories;
-2. this session's own touched-path record, which the tools layer writes on every
-   mutating file operation;
-3. a scan for dirty repositories — **only** when `turnSyncScope: 'workspace'`.
+- **`status`** — the state of a repository, or of every repository under a directory:
+  branch, ahead/behind, changed paths, worktrees, any open pull request. Reads only.
+- **`start`** — create the worktree for this task (branch `<prefix><slug>`, cut from
+  `origin/<base>`) and return its path; reuses the one this session already owns.
+- **`commit`** — stage the named paths and commit them; with no paths, stage everything.
+  `push: true` pushes in the same call.
+- **`push`** — push the current branch. Refuses a protected branch unless
+  `allowProtected` is true.
+- **`sync`** — fetch origin, then fast-forward only: the branch onto its base when it is
+  behind and has no commits of its own, or the base branch itself. Never merges or rebases.
+- **`pr`** — open a pull request, or return the one already open for this branch. Never
+  opens a second one.
+- **`merge`** — merge a pull request by number, or the one open for the current branch,
+  then remove the branch it came from and retire this session's worktree for it.
+- **`finish`** — the closing move for a unit of work: commit anything dirty, push, open or
+  reuse the pull request, and report. `cleanup: true` removes the worktree afterwards, and
+  only when the branch is on the remote and the worktree holds nothing uncommitted.
+- **`prune`** — dry-run then remove what this tool left behind. `apply: true` removes; a
+  branch holding work is reported, never deleted.
 
-A worktree this session owns is always in scope.
+`/git` prints the same state to a human.
 
-**When it runs.** Every tool call arms a settle timer. When the session has been
-quiet for a few seconds its edits have stopped, and the sync runs on its own, with
-no further tool call needed. A session in an unbroken burst of tool calls is still
-committed every minute, so nothing is ever more than a minute away from a commit.
+## Documentation
 
-The Host's own turn end — `session/event` carrying `turn/end`, and
-`agent/turn-stopping` where the deployment delivers it — is the primary hook and
-runs the same sync immediately. The timer covers the case where it does not, and
-whichever of the two runs second finds nothing to do. This is worth stating
-plainly, because the first reading of this deployment had it backwards: the
-plugin's own `boundary.log` records only the tools-layer fallback, which is not
-evidence about the other two boundaries at all. The Host's session log carries
-`turn/end` for every session.
+This file is the overview. The detail lives beside it:
 
-What *was* wrong was the fallback's timing and its message. It ran at the start of
-the next tool call, at most once a minute, so in a long turn it was the fallback
-that committed — mid-turn, up to a minute after the edits, several times over —
-and it always named the commit after a turn number it never had. Eight such
-commits landed in a single two-hour turn, and not one of them was a turn. The
-message now names what the commit contains; a turn number appears only when the
-Host really reported one.
-
-The default is `turnSyncScope: 'session'`, and that choice is about more than
-tidiness. Step 3 cannot tell whose work is whose. Once several sessions share a
-checkout — which is what an Agent Team is — "every dirty repository under the
-working directory" means the coordinator's turn end commits a teammate's
-half-finished edits under the coordinator's turn number. Nothing is lost, but the
-attribution is wrong and the commits are not the ones anybody asked for.
-
-So a repository this session never touched is left alone. It is not silently
-ignored: the turn result names what was in scope, and `status` keeps reporting
-the rest. Set `turnSyncScope: 'workspace'` for a single session working alone and
-you get the old, wider behaviour back.
-
-Within a repository the session has established as its own, everything dirty is
-committed. Narrowing that to the files the turn edited would leave one file the
-turn touched and one it did not, both uncommitted, with no later turn likely to
-notice either.
-
-**Turn push.** The commit is then pushed, but only when the branch is one that is
-safe to push: a task branch under `branchPrefix`, or the branch of a worktree
-this session owns. `main` and `master` are never pushed automatically. A commit
-made in a throwaway worktree that is never pushed is work that gets deleted with
-the worktree, so for those branches pushing is not a convenience.
-
-A branch whose work is already in `origin/<base>` is not pushed either. That is what a
-merged task branch looks like: action `merge` deletes the remote branch it merged, the
-next fetch prunes the tracking ref that recorded it, and "no upstream" then reads exactly
-like "never published" — which is how a branch a merge had just removed came back on the
-remote. The question is asked of refs on disk (no round trip, no API), and only a positive
-answer skips the push: commits the base does not have are published as before, which is what
-keeps a worktree's only copy of its work off the floor.
-
-What is never done: pushing a protected branch, pushing a branch the base already
-contains, committing during a merge, rebase or cherry-pick, or committing more paths
-than `turnCommitMaxFiles`.
-
-## Forcing a worktree
-
-Everything above *asks*. `autoWorktree` is the only setting that **refuses**, and
-it exists because the moment that decides where work lands is a file edit — a
-model that reads "work in a worktree" and then edits `main` has followed the
-instruction as far as it understood it.
-
-| Mode | An edit is refused when |
+| File | What is in it |
 |---|---|
-| `off` *(default)* | never — the tool description and the git guard are the whole story |
-| `protected` | the target repository is on a protected branch and the edit is not already inside this session's worktree |
-| `always` | the target repository has no worktree for this session, on any branch |
-
-Turn it on when you want isolation to be structural rather than advisory. Leave it
-off while you are still forming the habit — a rule that fires before you expect it
-is a rule you route around.
-
-**What it does not do:** create the worktree for you. It refuses and names
-`action "start"`. A guard that created one as a side effect would leave a worktree
-behind for every abandoned edit and teach the caller nothing about why the write
-stopped.
-
-**What it never touches:** an edit already inside your worktree, a non-protected
-branch under `protected`, a path outside any repository, and a shell command —
-reading a shell command well enough to know whether it writes a file is the same
-unbounded problem the git guard already documents as best-effort.
-
-**Where a write lands, not how it is spelled.** The verdict follows the path through
-its symlinks: a link inside the worktree that points at the main checkout makes that
-write a write into main, so it is refused, while a new file whose path only passes
-through a symlinked directory that resolves back inside the worktree is allowed. The
-same question decides whether `always` thinks this session has a worktree here at
-all — the edit has to land inside one of the paths the session registered, never on a
-root that merely looks equal.
-
-## Worktrees
-
-One task, one worktree, at `<worktreeRoot>/<repo>/<slug>` on branch `dsh/<slug>`
-cut from `origin/<base>`. Outside every repository on purpose:
-nothing to add to `.gitignore`, and no second copy of the tree for editors and
-watchers to index and for test globs to match twice.
-
-The root is the `worktreeRoot` setting, and it is **derived from the session's own
-workspace** unless you set it: `<session workspace>/.worktrees`. That default is
-deliberate. Worktrees are where edits happen, and a Harness file sandbox writes only
-inside the session workspace — so a root anywhere else produces a guard that refuses
-an edit and then points at a directory the agent cannot write to. Set `worktreeRoot`
-to move them, and keep the value outside every repository. See
-[Changing a setting](#changing-a-setting).
-
-- The worktree is locked while a session owns it.
-- A branch checked out more than once is refused, never forced.
-- Removal never uses `--force` on its own and never `rm -rf`. A dirty worktree
-  is refused with the uncommitted paths named, and the lock goes back on.
-- A live worktree this plugin did not create is never removed. Naming it is not
-  permission: without an ownership marker beside it the removal is refused and the
-  worktree reported — dirty or clean — unless the call says `force: true`. The one
-  exception is a *registration* whose directory is already gone: it holds no work at
-  all, so the sweep clears it and releases the lock, which is the only way such an
-  entry ever disappears.
-- A branch counts as this plugin's own only inside the `branchPrefix` namespace, and the
-  prefix has to end at a separator: a prefix `task` never claims a user branch named
-  `taskforce`. The rule governs the automatic push, the prune sweep and the remote-branch
-  cleanup, not just the local delete — GitHub's own branch listing matches by prefix, so
-  the boundary is re-applied where that listing is used.
-- When a removal leaves the worktree's `<worktreeRoot>/<repo>/` directory holding nothing
-  but Finder metadata, the directory goes with it. One that still holds anything stays.
-- `finish --cleanup` closes the worktree only after committing what was in it *and*
-  getting it onto the remote: a push that failed or was never attempted keeps the
-  worktree and reports why, because a worktree with no published copy of its
-  commits is the only place those commits exist.
-
-## Authentication
-
-Nothing is stored here. `git` runs with `HOME` and `PATH` preserved, so the
-machine's own credential helper resolves credentials — on this machine that is
-`osxkeychain` from the system gitconfig. GitHub API calls use
-`GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
-never logged, never written to disk, and redacted from every error.
-
-GitHub is talked to over REST rather than through `gh`, because structured
-status codes beat matching error prose — and because
-[`gh pr merge --delete-branch`](https://github.com/cli/cli/issues/14537) does
-local branch cleanup in the *current* directory's repository, matching the branch
-by name only, which can delete an unrelated worktree's unpushed commits.
-
-## The guard
-
-Raw `git` in `bash` is classified three ways. Detection is **best-effort, not a
-security boundary** — an obfuscated command can still get through, and that is
-documented in `lib/guard.mjs` rather than papered over.
-
-| Class | Decision |
-|---|---|
-| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow. A plain `fetch` reads; `--prune`, `--all`, `--tags`, a force flag or a refspec with a destination *writes refs* and is gated like a mutation |
-| mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
-| destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
-
-The class is decided from a parsed command line, not from the text of its tokens. A
-value belongs to its option whatever it looks like, `--` ends the options, and the
-verb is the first operand: `git clean -fenodeModules -d` is a forced clean and not a
-dry run, `git tag -m '--delete' v1` creates a tag whose *message* is `--delete`, and
-`git push -o -f origin main` is a push to a protected branch rather than a force
-push, because git consumed `-f` as the value of `-o`. The same parse is why
-`git worktree add -b list ../wt` and `git stash push -m list` are the mutations they
-are, and why a read form does not become a mutation because a value happens to spell
-one.
-
-A mutating subcommand the tool has no action for is denied too, rather than waved
-through because no action replaces it: `git config --add core.hooksPath …`,
-`git remote set-url`, `git reflog delete`, `git tag v1.0`, `git gc`,
-`git repack`, `git maintenance run`, `git submodule add`,
-`git sparse-checkout set`, `git notes remove`, `git lfs push`,
-`git send-email`, `git format-patch`. Each reason says so plainly — the tool cannot
-make that change for you, and `guardMode` (`warn` or `off`) is the deliberate escape
-hatch. The read forms stay allowed: `git tag -l`, `git remote -v`,
-`git config --get`, `git reflog`, `git submodule status`,
-`git sparse-checkout list`. `git config` writing `core.hooksPath` is the sharpest of
-them: hooks run on the *next* git command, so what would be executing is somebody
-else's program, with the guard watching the wrong process.
-
-A read can still be *told to run something*, and that is asked about rather than allowed:
-an environment prefix naming `GIT_PAGER`, `PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`,
-`GIT_EDITOR` and their siblings; a global `-c` or `--config-env` whose config **key**
-carries a program (`core.pager`, `core.hooksPath`, `diff.external`, `alias.*`, …); or
-`--exec-path`/`--upload-pack`. The reason names the mechanism — "the program in
-`GIT_PAGER`" — rather than the wrapper text, which would be false: nothing is wrapped.
-An override can never downgrade a refusal, so the same flag on a mutation still denies.
-`PAGER`, the generic variable, is treated exactly like `GIT_PAGER`: it is the last link in
-git's pager chain, so a read that sets it can be telling git to run a program. `PAGER=cat`
-is a habit, and the habit has a free replacement — `git --no-pager <command>` is the same
-read, is already allowed, and the pager reasons say so. The cost is real and paid
-deliberately: `PAGER=cat git log` now asks, like the `GIT_PAGER` spelling always has.
-
-A dry run reads whatever else it names — `git push --dry-run origin main`, `-n`,
-`--force --dry-run` — because nothing is sent. Git's last-flag-wins applies, so
-`git push --dry-run --no-dry-run` really pushes and is denied.
-
-`deny` outranks `ask` anywhere in one command line, so `git status && git reset
---hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
-classify: refusing an operation nobody understands would block work for no stated
-reason.
-
-That last verdict is the only one that needs a person, so `guardAsk` decides what
-happens when there is nobody to ask. The default, `ask`, waits for an answer —
-right when somebody is watching, and a stalled turn when nobody is. `deny`
-refuses the command with the reason attached, so an unattended session fails fast
-and learns which action to call instead. `allow` accepts it.
-
-`guardMode: off` disables the guard entirely; `warn` classifies and then allows
-everything, which makes it a diagnostic for seeing what a session reaches for —
-not a safer setting, because it drops the destructive denials with the rest.
+| [`docs/turn-sync.md`](docs/turn-sync.md) | the automatic half: what is committed and pushed, when it declines, and how to watch it |
+| [`docs/guard.md`](docs/guard.md) | what raw git in `bash` is refused or asked about, and why there are no hooks |
+| [`docs/worktrees.md`](docs/worktrees.md) | the task lifecycle, ownership and path identity, and the one action that removes things |
+| [`docs/install.md`](docs/install.md) | a fresh machine, and `link:` versus GitHub installs |
+| [`docs/testing.md`](docs/testing.md) | running the suite, its fixtures, and what CI does with it |
 
 ## Settings
 
@@ -312,297 +127,19 @@ The two settings most worth changing:
   Wherever you point it, keep it outside every repository, or the worktree becomes
   a second copy of the tree inside the repository that created it.
 
-## Install it on another machine
+## Authentication
 
-The bundle is built to install anywhere:
+Nothing is stored here. `git` runs with `HOME` and `PATH` preserved, so the
+machine's own credential helper resolves credentials — on this machine that is
+`osxkeychain` from the system gitconfig. GitHub API calls use
+`GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
+never logged, never written to disk, and redacted from every error.
 
-- **It follows the deployment's home.** `$DSH_HOME` decides, then
-  `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
-  `@deepseek-ai/dsh-home-paths` uses. A machine that moves its Harness home does
-  not get git state written to the old one.
-- **No machine path is baked in.** No absolute imports, no `file://` imports, no
-  authoring-machine home, no `app.asar` reference.
-- **Every file it imports ships.** `package.json`'s `files` allowlist names
-  `index.js`, `lib/`, `locale/` and `icon.svg` — the whole runtime — and every import
-  in it is relative or a `node:` builtin, so an install carries what the entry points
-  load.
-- **It loads with nothing installed.** The one declared dependency is
-  `@deepseek-ai/schemastery`, and it is loaded through `createRequire` probes
-  rather than a static import, so the plugin mounts and works without it.
-
-Install on another Harness the way this profile already installs another bundle:
-
-```bash
-# The profile directory is the install target, not a global prefix:
-mkdir -p ~/.dsh/profiles/<name> && cd ~/.dsh/profiles/<name>
-pnpm add github:stansz/dsh-git
-```
-
-**Pin it if you want reproducibility.** An unpinned `github:` spec follows the
-default branch, so a fresh install on another machine gets whatever is newest at
-that moment. To freeze a known-good state, name the ref:
-
-```bash
-pnpm add github:stansz/dsh-git#v0.1.0
-```
-
-Then make the profile load the bundle — one line in its own `package.json`:
-
-```json
-"dsh": { "profile": { "bundles": ["…", "dsh-git"] } }
-```
-
-`plugin_manager` with `install_bundle` does the dependency and the bundle-list
-entry together and is what to prefer when it is available. The row inside the
-package needs no editing: it names `dsh-git`, which resolves from the profile's
-`node_modules` once the dependency is installed.
-
-Finally, set that machine's guard mode and worktree root by overriding this
-bundle's row in the profile's own patch layer — the same place every other row is
-configured. There is no Configure page in this version, and no client half: that
-work was built and then removed, because a client half in the boot graph could
-take the front end down. Until the row is overridden, every setting keeps its
-default.
-
-Nothing here is machine-specific: `git` and the optional `gh` are the only
-external tools, authentication comes from that machine's own credential helper,
-and every path resolves against that deployment's own `$DSH_HOME`.
-
-### `link:` or GitHub?
-
-They fail in opposite directions, and the failure has the same symptom — "my edit
-did nothing" — which is why this is worth deciding once rather than
-rediscovering on each machine:
-
-| Install | Reads the code from | A source edit takes effect | Fails when |
-|---|---|---|---|
-| `link:<path>` | your working tree | on plugin reload or Harness restart | the path is gone — a fresh machine cannot reproduce it, and an absolute path makes the profile non-portable |
-| `github:…` | the profile's `node_modules`, a frozen copy | **never** — not on reload, not on restart | you edit the checkout and forget the profile is reading a copy from somewhere else |
-
-**Use `link:` for development.** It is the only install where editing the source
-does anything at all. A `github:` install writes a copy into the profile's
-`node_modules`, and no amount of restarting makes that copy follow your editor —
-it keeps whatever the last install resolved.
-
-**Use `github:` for every other machine.** There is nothing to edit there, and a
-pinned ref (`#v0.1.0`) is the only version of "this is what I tested" that a second
-machine can reproduce.
-
-The trap is a profile that mixes them, because it looks uniform and is not: one
-`link:` bundle updates when you edit it and the next quietly does not. If you
-edit a bundle and a restart shows no change, check how that bundle is installed
-before looking for a bug in the code.
-
-Neither install reloads a changed module by itself — the running Host keeps the
-module it loaded. Restarting the Harness is the reliable way to see an edit; the
-expensive mistake is to edit, see no change, and go hunting for a defect that is
-not there.
-
-The entire `dsh.*` custom-work set in this workspace uses absolute `link:` paths,
-recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine must use
-Git installs instead. That trap is about *deployment*. It is not an argument
-against `link:` while you are the one doing the developing.
-
-**Requirements:** see [Requirements](#requirements) below — git on `PATH`, Node 18+
-for global `fetch`, and `gh` only as an optional token source.
-
-## When the automatic sync cannot finish
-
-The turn sync is built so that declining to commit is never quiet. A skip, a
-refused push, a timeout and an unexpected failure all produce a message the
-**model** reads — not only a Host log line. Every boundary reports this, including
-the tools-layer one that does most of the committing. It used to write its
-failures to a log file and to nobody else, which made "reported, not silent" true
-of the hooks that do the least work and false of the one that does the most:
-
-```
-dsh-git could not finish syncing your working tree:
-  - dsh-git: skipped the automatic commit: 340 changed paths, above the limit of 200
-Run the git tool with action "status" to see the current state, and action
-"commit" or action "push" to finish the work by hand.
-```
-
-Declining to commit is not the only thing it reports. A repository that is dirty but
-that this session never changed is *left* uncommitted on purpose: with the default
-`turnSyncScope: "session"` the sync touches only repositories this session recorded,
-because committing somebody else's work in progress is worse than leaving it. What used
-to be silent is now said:
-
-```
-dsh-git could not finish syncing your working tree:
-dsh-git left 1 dirty repository uncommitted:
-  - other-repo (/workspace/other-repo): dirty and never recorded by this session, so it was left uncommitted (turnSyncScope: "session")
-This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "commit") if it is yours, and leave it alone if it is not.
-Run the git tool with action "status" to see the current state, and action "commit" or action "push" to finish the work by hand.
-```
-
-Work written through `bash` is the case this exists for: the recorder only sees the file
-tools, so a repository changed that way and never touched again is exactly the one the
-sync has to mention rather than quietly skip.
-```
-
-Reaching the model takes two steps, and both are deliberate: `agent.inject()`
-puts the text in its context, but does **not** wake it, so `agent.followup()` then
-starts the turn that reads it. Injection alone would leave the note waiting in
-the inbox until the user happened to say something, which is indistinguishable
-from never sending it.
-
-A *successful* sync announces nothing. Saying "committed and pushed" every turn
-is noise, and noise is how a real message gets skipped.
-
-## Git hooks
-
-The plugin commits through ordinary `git commit` and does **not** pass
-`--no-verify`, so every hook that repository has installed runs on automatic
-commits too — `pre-commit`, `commit-msg`, `post-commit`, and a global
-`core.hooksPath`, if one is set.
-
-That matters most for `post-commit`, because it runs *after* the commit exists
-and can do anything. This workspace used to have five of them — one per bundle —
-each exactly this:
-
-```
-<repo>/.git/hooks/post-commit:
-    #!/bin/sh
-    git push origin HEAD
-```
-
-A hook like that pushes on every commit, **including automatic turn commits**, and
-it bypasses everything in this plugin's push path. They were removed on
-2026-10-05, superseded by the turn sync, which decides *whether* a branch may be
-pushed instead of pushing whatever `HEAD` happens to be. Backed up under
-`.dsh-hooks-removed/` in this workspace.
-
-A global `core.hooksPath` pointing at such a hook would put it back in every
-repository at once.
-
-The specific hazard: `action "push"` refuses a protected branch, but a
-`post-commit` hook that pushes `HEAD` does not know what branch it is on. A hook
-like the one above, installed globally, pushes `main` on every automatic commit —
-exactly the outcome the protected-branch rule exists to prevent. If you install a
-global `core.hooksPath`, check what its `post-commit` does first.
-
-Hooks are also deliberately allowed to fail the commit. When one does, the sync
-reports it like any other skip rather than working around it: a hook that rejects
-a commit is a policy, and stepping over it silently would be worse.
-
-## Cleaning up
-
-`prune` is the one action that deletes, and it is narrow on purpose. Everything
-else here refuses to remove things because a branch or worktree may be in use —
-which is right, but it left the plugin unable to tidy up after *itself*.
-
-```
-git prune                                        # dry run: what is left behind
-git prune apply: true                            # remove it
-git prune repo: /path/to/checkout                # one repository, no sweep
-git prune apply: true branches: [dsh/leftover]   # a branch no rule can prove dead
-```
-
-With no `repo`, it sweeps every repository under the working directory — the same
-sweep `status` does, and the one this action used to fail with `not-a-repo`. That
-mattered: a session's working directory usually *contains* its repositories
-rather than being one, so the reporting action worked there and the cleanup
-action was impossible, which is the "it cannot clean up after itself" failure in
-its purest form.
-
-It removes a worktree registration whose directory is gone, and a branch under
-`branchPrefix` that **no worktree has checked out and that holds no commit the
-base branch does not already have**. A branch with work of its own is reported
-and kept. That is the whole safety argument, and it is worth stating plainly:
-deleting a branch is what the guard denies `git branch -D` for, so this door
-opens only onto the plugin's own leftovers.
-
-**A merged pull request is a proof about a commit, not about a name.** A branch is
-removed on the strength of one only when that pull request merged *the commit the
-branch points at now* — the head sha the API reports, compared with the tip read
-from the branch. Names get reused: `start fix-the-login-bug`, merge it, then
-`start fix-the-login-bug` again for something else. The second task wears the
-first task's name, and a rule that matched on the name alone deleted its newest
-commit, silently, on a sweep that was only supposed to tidy up. Now that branch is
-kept, and the report says a merged pull request exists for the name but covers a
-different commit. The same rule guards the remote ref, which is deleted only when
-it points at that same commit, and it guards the worktree close that every
-automatic sync performs.
-
-**Two leftovers cannot be proven disposable locally.** A squash merge rewrites a
-branch's commits, so its content is in the base while its commits are not; and a
-repository whose remote is gone cannot answer whether the pull request was
-merged at all.
-
-That is why `merge` performs only a merge that keeps the ancestry, and refuses a
-squash or a rebase outright — before it touches the API, so the answer does not
-depend on the remote either. It also retires the task as part of the merge: the
-worktree, its session record and its branch, at the one moment the fact is in
-hand — and only the pull request's *own* head branch, only when it carries
-`branchPrefix`, and only when it points at the commit the merge covered. A merge
-run from somewhere else used to delete the branch the caller happened to be
-standing on, which from the main checkout is `origin/main`. A branch that has
-moved past the merge holds work the pull request never contained, so it stays,
-with the worktree, and the result says which commit was not covered. A squash performed by hand, in the GitHub UI, is the case this section is
-about — nothing ran locally to record anything — so name it:
-
-```
-git prune apply: true branches: [dsh/prune-remote]
-```
-
-Naming it *is* the proof — no rule is guessing. Two conditions still hold: the
-name must be under `branchPrefix`, and a branch a worktree has checked out is
-refused. Without `apply: true` it is a dry run like everything else. The guard's
-denial for raw `git branch -D` points here, because action `finish` closes a
-worktree but never removes its branch.
-
-**An abandoned worktree needs naming too.** The rule above only drops a
-*registration* whose directory is already gone, so a worktree still sitting on
-disk — the usual state of a task nobody closed — is invisible to it, and its
-branch cannot be removed while it is checked out there. Name it:
-
-```
-git prune apply: true worktrees: [some-slug]
-```
-
-Naming a worktree is not permission to remove somebody else's. Ownership is the
-marker this plugin writes beside a worktree it created: a worktree with no marker is
-reported and left exactly as it stands — in the dry run and under `apply: true`
-alike — with its dirty paths named if it has any, and nothing is unlocked on the way.
-The deliberate door for the case a marker cannot answer (a plugin worktree whose
-marker was deleted by hand, or one you have decided to clear yourself) is
-`force: true`:
-
-```
-git prune apply: true worktrees: [some-slug] force: true
-```
-
-`force` overrides ownership and nothing else: the main checkout is still refused, a
-dirty worktree is still refused with its files named, and a removal that happened
-under it is reported as forced.
-
-**A merged task closes itself.** Action `merge` retires the task the moment it
-merges, and each automatic sync closes a worktree this session owns whose pull
-request merged the commit that branch points at — the directory, the branch, and
-the branch's remote ref when that ref is at the same commit. That is the automatic
-half of this section, and the reason per-task isolation no longer accumulates: a
-task that finished does not wait to be noticed, and a session that simply stops
-does not leave a directory behind for a human to find.
-
-The proof is the same one used everywhere else here — GitHub says a pull request
-from that branch merged *this commit* — so nothing is removed on a guess. A branch
-that has moved since its merge, a failed query, a repository with no remote, and a
-dirty worktree all mean the same thing: leave it alone, and say which commit was
-not covered.
-
-A full path always works, and a directory name works when exactly one worktree has it:
-an ambiguous name removes neither, and names both candidates, because removing the wrong
-one is worse than a refusal. A dirty worktree is refused and its files
-are named; the main checkout is never touched; and the branch the removal frees
-is removed with it when it holds no commit of its own. Set `autoWorktree` to
-`protected` or `always` and this is the closing move that keeps the isolation
-from turning into a directory per abandoned task. A branch counts as this plugin's own
-only when `branchPrefix` ends at a separator - the rule governs the whole namespace, not
-just removals: the automatic push decision, the prune sweep and the remote-branch cleanup
-all apply it - so a prefix `task` never claims a user branch named `taskforce`. When a removal
-leaves the `<worktreeRoot>/<repo>/` directory
-holding nothing but Finder metadata, the directory goes with it.
+GitHub is talked to over REST rather than through `gh`, because structured
+status codes beat matching error prose — and because
+[`gh pr merge --delete-branch`](https://github.com/cli/cli/issues/14537) does
+local branch cleanup in the *current* directory's repository, matching the branch
+by name only, which can delete an unrelated worktree's unpushed commits.
 
 ## Requirements
 
@@ -617,121 +154,14 @@ reaches for `agents` and `workspaceChanges` defensively — a build without them
 still works, with a less precise commit subject — and registers on
 `tools/pre-execute` and `agent/turn-stopping`.
 
-## How to see the automatic commit work
-
-Make an edit in a repository and stop. A few seconds later `git log` shows a commit
-whose subject starts `dsh: ` and names the files it contains, with
-`Assisted-by: DSH` in the body — or `dsh: turn <N> — <files>` when a real turn
-boundary supplied a number. Ending the turn is not what triggers it, and neither
-is the next tool call. On a protected branch the commit lands and the push is
-refused with a reason; on a `dsh/` worktree branch both happen. `git status` inside the plugin's own
-repository is the fastest check, and `/git` prints the same state in the composer.
-
-The automatic commit is deliberately not narrowed to the files a turn edited.
-Narrowing it would leave one file the turn touched and one it did not, both
-uncommitted, with no later turn likely to notice — and "nothing left
-uncommitted" is the promise this bundle exists to keep. The commit subject names
-the files, so the result stays attributable without claiming a turn that may not
-have existed.
-
-## Running several sessions at once
-
-Agent Teams puts several sessions in one filesystem, and this plugin is designed
-for that rather than around it.
-
-**Give each teammate its own worktree.** Because the session registry is keyed by
-session id, each teammate gets its own automatically:
-
-1. the coordinator calls `git start` with a per-teammate slug;
-2. the task description carries the worktree's absolute path as the write scope;
-3. each teammate works, commits and pushes its own `dsh/<slug>` branch;
-4. integration becomes a real pull-request merge.
-
-Isolation is what makes this safe: a teammate's tree is invisible to everyone
-else's turn sync, so there is nothing for another session to sweep up. That is
-more deterministic than the shared-filesystem model Agent Teams otherwise
-assumes, not less.
-
-Nothing breaks if you skip that step either, because of `turnSyncScope: 'session'`
-— a teammate's uncommitted work in the shared checkout is simply not committed by
-anyone else, and `status` reports it until its owner commits it.
-
-**The guard refuses mutating git in `bash`.** A team hits that often, and the
-answer is the tool rather than a prompt: every refusal names the action that does
-the same job. `guardMode: 'warn'` classifies and allows instead, which is useful
-for seeing what sessions reach for — but it drops the destructive denials too, so
-it is a diagnostic, not a team setting.
-
-**Session state is written under a lock, one sync runs at a time.** Two OS processes
-writing one session file used to lose records — an entire process's worth in the measured
-case — so every read-modify-write now takes an advisory lock (exclusive create, a two
-second deadline, and a ten second staleness break so a killed writer cannot wedge it; a
-lock that cannot be taken reports failure rather than writing unsynchronised). The
-automatic sync is serialized per session for the same reason: its triggers — the quiet
-period, the ceiling and the two turn boundaries — can land in the same window, and two
-runs over one worktree race the same index and the same ref. A trigger that arrives
-during a run folds into exactly one follow-up, never dropped.
-
-## Path identity, the bug class this code keeps hitting
-
-`git` realpaths everything it reports. On macOS `/tmp` is `/private/tmp` and
-`/var/folders/...` is `/private/var/folders/...`, so the same directory has two
-spellings and a string comparison between them is always false. More than a dozen bugs
-here were that class, and the sharp ones failed *silently* — a repository that looked
-untouched, a worktree that looked unowned, a commit that looked unnecessary.
-
-Two refinements came out of that history. A path's verdict follows **where the write
-lands**: the deepest existing ancestor is realpath'd and the rest re-appended, so a
-symlink inside a worktree pointing at the main checkout is a write into main and is
-refused, while a new file whose path merely passes through a symlinked directory that
-resolves back inside the worktree is allowed. And an owned path has to **be** the worktree
-git registered — the final component is not followed, and the checkout there must be on
-the branch that registration reports — because a path that has been replaced by a link (or
-by a copy of another checkout) is not the session's worktree, however it is spelled.
-
-The rule this settled on: realpath at every boundary, and key session state on
-the **main repository root** (`git worktree list` reports it first), never on the
-directory a caller happens to be standing in — inside a worktree those differ,
-and the registry lookup then finds nothing.
-
 ## Tests
 
 ```bash
 npm test
 ```
 
-CI runs exactly this on every push and pull request — ubuntu and macOS on Node 22 and
-24, with no `npm install` because the bundle's one dependency is loaded defensively and
-the suite needs no third-party code. The matrix is the point rather than decoration: the
-bug class this code keeps hitting is path identity, and that is what differs between
-platforms, so a suite that only ever ran on one machine was measuring less than it looked
-like.
-
-`node --test` runs the `test/**/*.test.mjs` glob. Nothing is mocked: every case
-builds a real repository with a real bare origin inside a workspace directory,
-then drives the plugin's own exported functions — `runAction` for the tool
-actions, `evaluateWorktree` through the listener `registerWorktreeGuard`
-installs, `registerTurnSync` against a Host reduced to a handler map for the
-automatic half, and the local primitives the actions rest on (`deleteBranch`,
-`pruneWorktrees`, the pure merge-proof rule) — and asserts on real git state: worktree
-registrations, the branch a worktree has checked out, refs in the bare origin,
-the ownership marker beside a worktree, and the plugin's own state files.
-
-Two rules the suite learned the hard way. Every case cleans its directory through a hook
-that awaits disposal first: a bare cleanup registered *before* the plugin's host is
-disposed deletes a directory the sync is still writing, which throws, leaves the case on
-disk, and makes the exit sweep refuse a root that is not empty — that is how scratch used
-to survive a green run. And timing bounds are relative to the machine rather than
-absolute: a case that asserts "this did not take two seconds" with a fixed millisecond
-bound fails when three suites share the CPU, which says nothing about the plugin.
-
-Run it from a session workspace: a directory that contains your repositories and
-is not itself one. The suite takes its root from the working directory and moves
-to the repository's parent when that directory is a repository, because a worktree
-root inside a repository is the second copy of the tree this bundle warns about.
-`DSH_GIT_TEST_ROOT` overrides the location. Every case owns
-`<root>/.dsh-git-tests/<case>` and removes it when it ends, and the shared root
-goes with the last case — including when the only thing left in it is Finder
-metadata. `stateRoot` is pointed inside the case, so a test run never writes to
-a live deployment's state.
+The suite builds real repositories — a bare origin and a clone — and drives the plugin's
+own functions; nothing is mocked. It runs in CI on every push and pull request: ubuntu and
+macOS, Node 22 and 24. What it covers, and why a new test must fail against the
+pre-change library before it counts, is in [`docs/testing.md`](docs/testing.md).
 
