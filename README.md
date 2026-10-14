@@ -217,15 +217,17 @@ them: hooks run on the *next* git command, so what would be executing is somebod
 else's program, with the guard watching the wrong process.
 
 A read can still be *told to run something*, and that is asked about rather than allowed:
-an environment prefix naming `GIT_PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`,
+an environment prefix naming `GIT_PAGER`, `PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`,
 `GIT_EDITOR` and their siblings; a global `-c` or `--config-env` whose config **key**
 carries a program (`core.pager`, `core.hooksPath`, `diff.external`, `alias.*`, …); or
 `--exec-path`/`--upload-pack`. The reason names the mechanism — "the program in
 `GIT_PAGER`" — rather than the wrapper text, which would be false: nothing is wrapped.
 An override can never downgrade a refusal, so the same flag on a mutation still denies.
-The one deliberate gap is `PAGER`, the generic variable, because `PAGER=cat` is a common
-harmless idiom; if switching off a pager is all you want, `git --no-pager <command>` is
-the same read and is already allowed, and the pager reasons now say so.
+`PAGER`, the generic variable, is treated exactly like `GIT_PAGER`: it is the last link in
+git's pager chain, so a read that sets it can be telling git to run a program. `PAGER=cat`
+is a habit, and the habit has a free replacement — `git --no-pager <command>` is the same
+read, is already allowed, and the pager reasons say so. The cost is real and paid
+deliberately: `PAGER=cat git log` now asks, like the `GIT_PAGER` spelling always has.
 
 A dry run reads whatever else it names — `git push --dry-run origin main`, `-n`,
 `--force --dry-run` — because nothing is sent. Git's last-flag-wins applies, so
