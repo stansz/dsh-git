@@ -24,11 +24,6 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         # 22 is the oldest LTS that supports the glob in node --test (added in 21).
         node: [22, 24]
-    env:
-      # Keep scratch out of the checkout and inside the runner's temp dir; the suite
-      # cleans it up itself, and this makes that visible if it ever fails to.
-      DSH_GIT_TEST_ROOT: ${{ runner.temp }}/dsh-git-tests
-      GIT_TERMINAL_PROMPT: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,4 +33,11 @@ jobs:
       # createRequire, the suite mocks nothing and needs no third-party code, and an
       # install would make the suite depend on a registry it does not use.
       - run: node --version && git --version
+      # The runner context is not available in a job-level env block, only in a step's -
+      # using it there was the workflow-file error that made the first run produce no jobs.
       - run: npm test
+        env:
+          # Keep scratch out of the checkout and inside the runner's temp dir; the suite
+          # removes it itself, which keeps a leak visible rather than buried in the tree.
+          DSH_GIT_TEST_ROOT: ${{ runner.temp }}/dsh-git-tests
+          GIT_TERMINAL_PROMPT: "0"
