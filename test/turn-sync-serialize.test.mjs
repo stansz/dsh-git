@@ -189,15 +189,15 @@ function assertSerialized(c, host, observed) {
 
 test('two quiet-period triggers are one sync now and one after it', async (t) => {
   const c = makeCase('sync-lock-settle');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   const markers = installSlowHook(c);
   dirtyTurn(c);
   const { observed, run } = countingSync();
-  const host = fakeHost(c, { runSync: run, config: quietConfig(c) });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { runSync: run, config: quietConfig(c) });
 
   // Trigger one: a tool call, and the quiet period it arms.
   host.toolCall();
@@ -219,16 +219,16 @@ test('two quiet-period triggers are one sync now and one after it', async (t) =>
 
 test('the ceiling does not start a second sync on top of one that is running', async (t) => {
   const c = makeCase('sync-lock-ceiling');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   const markers = installSlowHook(c);
   dirtyTurn(c);
   const { observed, run } = countingSync();
   // The quiet period is out of reach, so only the ceiling can trigger.
-  const host = fakeHost(c, { runSync: run, settleMs: 60000, ceilingMs: 150, config: quietConfig(c) });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { runSync: run, settleMs: 60000, ceilingMs: 150, config: quietConfig(c) });
 
   host.toolCall(); // the first call of a session starts the clock
   await wait(250); // the ceiling is now due
@@ -250,15 +250,15 @@ test('the ceiling does not start a second sync on top of one that is running', a
 
 test('a turn boundary that arrives during a sync waits for it', async (t) => {
   const c = makeCase('sync-lock-boundary');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   const markers = installSlowHook(c);
   dirtyTurn(c);
   const { observed, run } = countingSync();
-  const host = fakeHost(c, { runSync: run, config: quietConfig(c) });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { runSync: run, config: quietConfig(c) });
 
   host.toolCall();
   assert.equal(await until(() => existsSync(markers)), true, 'the quiet-period sync reached the commit it holds open');
@@ -276,15 +276,15 @@ test('a turn boundary that arrives during a sync waits for it', async (t) => {
 
 test('disposal waits for the follow-up a running sync was owed', async (t) => {
   const c = makeCase('sync-lock-dispose');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   const markers = installSlowHook(c);
   dirtyTurn(c);
   const { observed, run } = countingSync();
-  const host = fakeHost(c, { runSync: run, config: quietConfig(c) });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { runSync: run, config: quietConfig(c) });
 
   host.toolCall();
   assert.equal(await until(() => existsSync(markers)), true, 'the first sync reached the commit it holds open');

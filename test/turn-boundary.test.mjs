@@ -42,6 +42,16 @@ const SETTLE_MS = 500;
 /** Comfortably inside the quiet period, for the assertions that nothing ran yet. */
 const STILL_BUSY_MS = 100;
 
+/**
+ * The quiet period for the one case that asserts nothing has been committed yet.
+ *
+ * 500 ms leaves only 400 ms between the tool call and that assertion, which a
+ * loaded machine can spend in a single scheduling gap — and then the assertion
+ * fails on a commit the plugin was right to make. The longer period costs the
+ * case about a second; the order it checks is the same order.
+ */
+const SETTLE_LONG_MS = 2000;
+
 /** The commit subject at HEAD. */
 function headSubject(repoDir) {
   return git(repoDir, ['log', '-1', '--format=%s']);
@@ -140,12 +150,12 @@ function dirtyTurn(name) {
 
 test('a tool call arms the turn close; the quiet after it is what commits', async (t) => {
   const { c, file } = dirtyTurn('boundary-settles');
-  t.after(() => c.cleanup());
-  const host = fakeHost(c);
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  host = fakeHost(c, { settleMs: SETTLE_LONG_MS });
 
   const before = headSubject(c.repoDir);
   host.toolCall();
@@ -170,12 +180,12 @@ test('a tool call arms the turn close; the quiet after it is what commits', asyn
 
 test('a session that keeps calling tools never commits mid-turn', async (t) => {
   const { c } = dirtyTurn('boundary-busy');
-  t.after(() => c.cleanup());
-  const host = fakeHost(c);
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  host = fakeHost(c);
 
   // A burst of tool calls, each of which pushes the quiet period out. The claim
   // is not "no commit happens quickly" — it is that the commit is a function of
@@ -194,13 +204,13 @@ test('a session that keeps calling tools never commits mid-turn', async (t) => {
 
 test('a session that never goes quiet is still committed periodically', async (t) => {
   const { c } = dirtyTurn('boundary-ceiling');
-  t.after(() => c.cleanup());
-  // A quiet period far longer than the test, so only the ceiling can commit.
-  const host = fakeHost(c, { settleMs: 60000, ceilingMs: 300 });
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  // A quiet period far longer than the test, so only the ceiling can commit.
+  host = fakeHost(c, { settleMs: 60000, ceilingMs: 300 });
 
   const before = headSubject(c.repoDir);
   const deadline = Date.now() + 15000;
@@ -231,7 +241,16 @@ test('a disposed host does not write a case back after it was cleaned up', async
 
 test('a stale recorder list does not empty the commit subject', async (t) => {
   const c = makeCase('boundary-stale-recorder');
-  t.after(() => c.cleanup());
+  // One hook, disposal first. node runs after hooks in registration order, so a
+  // bare cleanup registered here ran before the dispose hook below and removed
+  // the case root while the sync this test starts was still writing its tail:
+  // rmSync threw ENOTEMPTY, the case survived on disk, and the suite's exit sweep
+  // then refused to remove a root that was not empty.
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
 
   // The live case: an owned worktree is always in scope, so the commit happens —
   // and the recorder's list, one turn behind, mentioned only a file outside it.
@@ -244,11 +263,7 @@ test('a stale recorder list does not empty the commit subject', async (t) => {
   writeFileSync(file, 'this turn\n');
   assert.equal(store.record(c.sessionId, started.worktree, file, { stateRoot: c.config.stateRoot }), true);
 
-  const host = fakeHost(c, { recorder: { files: [stale] } });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { recorder: { files: [stale] } });
 
   const before = git(started.worktree, ['log', '-1', '--format=%s']);
   host.toolCall();
@@ -257,12 +272,12 @@ test('a stale recorder list does not empty the commit subject', async (t) => {
 
 test('a turn close that arrives carries its own number', async (t) => {
   const { c } = dirtyTurn('boundary-real-event');
-  t.after(() => c.cleanup());
-  const host = fakeHost(c);
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  host = fakeHost(c);
 
   const before = headSubject(c.repoDir);
   host.turnStopping(3);
@@ -271,15 +286,15 @@ test('a turn close that arrives carries its own number', async (t) => {
 
 test('the sync that runs is the sync that speaks', async (t) => {
   const { c } = dirtyTurn('boundary-notify');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   // The automatic commit is switched off, so the tree is left dirty and the sync
   // has something it must report. Before this was fixed the path that actually
   // ran said it to a log file and to nobody else.
-  const host = fakeHost(c, { config: { ...c.config, turnCommit: false } });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { config: { ...c.config, turnCommit: false } });
 
   host.toolCall();
   const deadline = Date.now() + 15000;
@@ -295,8 +310,12 @@ test('the sync that runs is the sync that speaks', async (t) => {
 
 test('disposal runs the turn it was holding instead of dropping it', async (t) => {
   const { c } = dirtyTurn('boundary-dispose');
-  t.after(() => c.cleanup());
-  const host = fakeHost(c);
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
+  host = fakeHost(c);
 
   const before = headSubject(c.repoDir);
   host.toolCall();
@@ -320,17 +339,17 @@ test('disposal runs the turn it was holding instead of dropping it', async (t) =
 
 test('when the deployment has a recorder, its file list is what is committed', async (t) => {
   const c = makeCase('boundary-recorder');
-  t.after(() => c.cleanup());
+  let host;
+  t.after(async () => {
+    await host?.dispose();
+    c.cleanup();
+  });
   const file = join(c.repoDir, 'from-recorder.txt');
   writeFileSync(file, 'reported by the recorder\n');
   // Deliberately NOT recorded in the session store: the only way this repository
   // can be reached is through the recorder's summary, which is the branch under
   // test.
-  const host = fakeHost(c, { recorder: { files: [file] } });
-  t.after(async () => {
-    await host.dispose();
-    c.cleanup();
-  });
+  host = fakeHost(c, { recorder: { files: [file] } });
 
   const before = headSubject(c.repoDir);
   host.toolCall();
@@ -362,12 +381,12 @@ test('a configured message template is not filled with the word undefined', () =
 
 test('the boundary that fires is recorded, whichever one it was', async (t) => {
   const { c } = dirtyTurn('boundary-diagnostics');
-  t.after(() => c.cleanup());
-  const host = fakeHost(c);
+  let host;
   t.after(async () => {
-    await host.dispose();
+    await host?.dispose();
     c.cleanup();
   });
+  host = fakeHost(c);
 
   const before = headSubject(c.repoDir);
   host.toolCall();
