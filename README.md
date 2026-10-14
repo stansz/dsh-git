@@ -689,6 +689,13 @@ and the registry lookup then finds nothing.
 npm test
 ```
 
+CI runs exactly this on every push and pull request — ubuntu and macOS on Node 22 and
+24, with no `npm install` because the bundle's one dependency is loaded defensively and
+the suite needs no third-party code. The matrix is the point rather than decoration: the
+bug class this code keeps hitting is path identity, and that is what differs between
+platforms, so a suite that only ever ran on one machine was measuring less than it looked
+like.
+
 `node --test` runs the `test/**/*.test.mjs` glob. Nothing is mocked: every case
 builds a real repository with a real bare origin inside a workspace directory,
 then drives the plugin's own exported functions — `runAction` for the tool
