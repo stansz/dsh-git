@@ -3,7 +3,7 @@
  *
  * The guard classifies a command line. A read is allowed because reading is
  * safe, but git reads by running things: `GIT_EXTERNAL_DIFF` is executed by
- * `git diff`, `GIT_PAGER` by a paging command, `-c core.hooksPath=<dir>`
+ * `git diff`, `GIT_PAGER` and `PAGER` by a paging command, `-c core.hooksPath=<dir>`
  * installs a hook that runs on the next ref update, `-c alias.x='!...'` runs a
  * shell command, `include.path` pulls in a config file that can name any of
  * them, and `--exec-path=<dir>` or `--upload-pack=<program>` choose the
@@ -51,6 +51,19 @@ function gitEnv(cwd, args, extraEnv) {
   }).trim();
 }
 
+/**
+ * Run git with the pager variables cleared, unless the case sets them itself, so
+ * the machine's own GIT_PAGER cannot decide the answer. `git var GIT_PAGER` is
+ * git's own answer to "which program would you run", and it needs no terminal.
+ */
+function gitEnvNoPager(cwd, args, extraEnv) {
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...extraEnv };
+  for (const key of ['GIT_PAGER', 'PAGER', 'GIT_PAGER_IN_USE']) {
+    if (!(key in extraEnv)) delete env[key];
+  }
+  return execFileSync('git', args, { cwd, encoding: 'utf8', env }).trim();
+}
+
 /** An executable that records that git ran it. */
 function fakeProgram(path, marker) {
   writeFileSync(path, '#!/bin/sh\nprintf ran > ' + marker + '\n');
@@ -61,6 +74,7 @@ function fakeProgram(path, marker) {
 const OVERRIDES = [
   ["git -c core.pager='sh -c evil' log", /core\.pager/u],
   ["GIT_PAGER='sh -c evil' git log", /GIT_PAGER/u],
+  ["PAGER='sh -c evil' git log", /PAGER/u],
   ['GIT_EXTERNAL_DIFF=/tmp/evil git diff', /GIT_EXTERNAL_DIFF/u],
   ['git --exec-path=/tmp/evil status', /--exec-path/u],
   ['git -c include.path=/tmp/evil.gitconfig log', /include\.path/u],
@@ -226,4 +240,55 @@ test('D40: a pager override names git --no-pager as the way out, and the others 
   const commit = decide('GIT_PAGER=cat git commit -am x');
   assert.equal(commit.kind, 'deny', 'a pager override must not soften a mutation');
   assert.doesNotMatch(commit.reason, /--no-pager/u, 'a refusal names the replacement action, not a pager hint');
+});
+
+test('D43: PAGER is the pager git runs, and the guard treats it like GIT_PAGER', (t) => {
+  const c = makeCase('guard-pager-chain');
+  t.after(() => c.cleanup());
+
+  // The premise, measured without a terminal (which the pager itself needs):
+  // git var GIT_PAGER is git's own answer to "which program would you run", and
+  // it resolves the whole chain in the documented order.
+  assert.equal(
+    gitEnvNoPager(c.repoDir, ['var', 'GIT_PAGER'], { PAGER: '/tmp/from-pager' }),
+    '/tmp/from-pager',
+    'git takes the pager program from PAGER',
+  );
+  assert.equal(
+    gitEnvNoPager(c.repoDir, ['-c', 'core.pager=/tmp/from-config', 'var', 'GIT_PAGER'], { PAGER: '/tmp/from-pager' }),
+    '/tmp/from-config',
+    'core.pager outranks PAGER',
+  );
+  assert.equal(
+    gitEnvNoPager(c.repoDir, ['var', 'GIT_PAGER'], { PAGER: '/tmp/from-pager', GIT_PAGER: '/tmp/from-git-pager' }),
+    '/tmp/from-git-pager',
+    'GIT_PAGER outranks PAGER',
+  );
+
+  // The name the guard used to wave through now asks, and the reason says which
+  // variable it is asking about rather than naming the other spelling.
+  const evil = decide("PAGER='sh -c evil' git log");
+  assert.equal(evil.kind, 'ask', 'PAGER names a program git runs, so a read carrying it asks');
+  assert.match(evil.reason, /the program in PAGER/u, 'the reason names PAGER itself');
+  assert.doesNotMatch(evil.reason, /GIT_PAGER/u, 'and not the other spelling of the same door');
+  assert.match(evil.reason, /git --no-pager/u, 'a pager override names the way out that needs no approval');
+
+  // The cost is the idiom, and it is paid deliberately: these ask too, and the
+  // reason carries the one replacement that does not.
+  for (const command of ['PAGER=cat git log -1', 'PAGER= git log']) {
+    const decision = decide(command);
+    assert.equal(decision.kind, 'ask', command + ' asks now; --no-pager is the free alternative');
+    assert.match(decision.reason, /git --no-pager/u, command + ' must say how to avoid the question');
+  }
+  assert.equal(kindOf('git --no-pager log'), 'allow', 'the alternative is real and already allowed');
+
+  // No softening: a mutation behind PAGER is still refused, with no pager hint.
+  const commit = decide('PAGER=cat git commit -am x');
+  assert.equal(commit.kind, 'deny', 'a pager override must not turn a refusal into a question');
+  assert.doesNotMatch(commit.reason, /--no-pager/u, 'a refusal names the replacement action, not a pager hint');
+
+  // Only the exact name counts: an unrelated assignment stays an ordinary read,
+  // and the config-key door is unchanged.
+  assert.equal(kindOf('PAGERLESS=1 git log'), 'allow', 'a longer name is a different variable');
+  assert.equal(kindOf('git -c pager.log=evil log'), 'ask', 'the config-key door is unchanged');
 });
