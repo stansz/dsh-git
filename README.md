@@ -92,8 +92,17 @@ this session owns. `main` and `master` are never pushed automatically. A commit
 made in a throwaway worktree that is never pushed is work that gets deleted with
 the worktree, so for those branches pushing is not a convenience.
 
-What is never done: pushing a protected branch, committing during a merge,
-rebase or cherry-pick, or committing more paths than `turnCommitMaxFiles`.
+A branch whose work is already in `origin/<base>` is not pushed either. That is what a
+merged task branch looks like: action `merge` deletes the remote branch it merged, the
+next fetch prunes the tracking ref that recorded it, and "no upstream" then reads exactly
+like "never published" — which is how a branch a merge had just removed came back on the
+remote. The question is asked of refs on disk (no round trip, no API), and only a positive
+answer skips the push: commits the base does not have are published as before, which is what
+keeps a worktree's only copy of its work off the floor.
+
+What is never done: pushing a protected branch, pushing a branch the base already
+contains, committing during a merge, rebase or cherry-pick, or committing more paths
+than `turnCommitMaxFiles`.
 
 ## Forcing a worktree
 
