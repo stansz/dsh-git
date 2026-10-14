@@ -155,6 +155,13 @@ to move them, and keep the value outside every repository. See
   exception is a *registration* whose directory is already gone: it holds no work at
   all, so the sweep clears it and releases the lock, which is the only way such an
   entry ever disappears.
+- A branch counts as this plugin's own only inside the `branchPrefix` namespace, and the
+  prefix has to end at a separator: a prefix `task` never claims a user branch named
+  `taskforce`. The rule governs the automatic push, the prune sweep and the remote-branch
+  cleanup, not just the local delete — GitHub's own branch listing matches by prefix, so
+  the boundary is re-applied where that listing is used.
+- When a removal leaves the worktree's `<worktreeRoot>/<repo>/` directory holding nothing
+  but Finder metadata, the directory goes with it. One that still holds anything stays.
 - `finish --cleanup` closes the worktree only after committing what was in it *and*
   getting it onto the remote: a push that failed or was never attempted keeps the
   worktree and reports why, because a worktree with no published copy of its
@@ -208,6 +215,21 @@ hatch. The read forms stay allowed: `git tag -l`, `git remote -v`,
 `git sparse-checkout list`. `git config` writing `core.hooksPath` is the sharpest of
 them: hooks run on the *next* git command, so what would be executing is somebody
 else's program, with the guard watching the wrong process.
+
+A read can still be *told to run something*, and that is asked about rather than allowed:
+an environment prefix naming `GIT_PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`,
+`GIT_EDITOR` and their siblings; a global `-c` or `--config-env` whose config **key**
+carries a program (`core.pager`, `core.hooksPath`, `diff.external`, `alias.*`, …); or
+`--exec-path`/`--upload-pack`. The reason names the mechanism — "the program in
+`GIT_PAGER`" — rather than the wrapper text, which would be false: nothing is wrapped.
+An override can never downgrade a refusal, so the same flag on a mutation still denies.
+The one deliberate gap is `PAGER`, the generic variable, because `PAGER=cat` is a common
+harmless idiom; if switching off a pager is all you want, `git --no-pager <command>` is
+the same read and is already allowed, and the pager reasons now say so.
+
+A dry run reads whatever else it names — `git push --dry-run origin main`, `-n`,
+`--force --dry-run` — because nothing is sent. Git's last-flag-wins applies, so
+`git push --dry-run --no-dry-run` really pushes and is denied.
 
 `deny` outranks `ask` anywhere in one command line, so `git status && git reset
 --hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
@@ -629,14 +651,32 @@ the same job. `guardMode: 'warn'` classifies and allows instead, which is useful
 for seeing what sessions reach for — but it drops the destructive denials too, so
 it is a diagnostic, not a team setting.
 
+**Session state is written under a lock, one sync runs at a time.** Two OS processes
+writing one session file used to lose records — an entire process's worth in the measured
+case — so every read-modify-write now takes an advisory lock (exclusive create, a two
+second deadline, and a ten second staleness break so a killed writer cannot wedge it; a
+lock that cannot be taken reports failure rather than writing unsynchronised). The
+automatic sync is serialized per session for the same reason: its triggers — the quiet
+period, the ceiling and the two turn boundaries — can land in the same window, and two
+runs over one worktree race the same index and the same ref. A trigger that arrives
+during a run folds into exactly one follow-up, never dropped.
+
 ## Path identity, the bug class this code keeps hitting
 
 `git` realpaths everything it reports. On macOS `/tmp` is `/private/tmp` and
 `/var/folders/...` is `/private/var/folders/...`, so the same directory has two
-spellings and a string comparison between them is always false. Four separate
-bugs here were that one class, and every one of them failed *silently* — a
-repository that looked untouched, a worktree that looked unowned, a commit that
-looked unnecessary.
+spellings and a string comparison between them is always false. More than a dozen bugs
+here were that class, and the sharp ones failed *silently* — a repository that looked
+untouched, a worktree that looked unowned, a commit that looked unnecessary.
+
+Two refinements came out of that history. A path's verdict follows **where the write
+lands**: the deepest existing ancestor is realpath'd and the rest re-appended, so a
+symlink inside a worktree pointing at the main checkout is a write into main and is
+refused, while a new file whose path merely passes through a symlinked directory that
+resolves back inside the worktree is allowed. And an owned path has to **be** the worktree
+git registered — the final component is not followed, and the checkout there must be on
+the branch that registration reports — because a path that has been replaced by a link (or
+by a copy of another checkout) is not the session's worktree, however it is spelled.
 
 The rule this settled on: realpath at every boundary, and key session state on
 the **main repository root** (`git worktree list` reports it first), never on the
@@ -658,6 +698,14 @@ automatic half, and the local primitives the actions rest on (`deleteBranch`,
 `pruneWorktrees`, the pure merge-proof rule) — and asserts on real git state: worktree
 registrations, the branch a worktree has checked out, refs in the bare origin,
 the ownership marker beside a worktree, and the plugin's own state files.
+
+Two rules the suite learned the hard way. Every case cleans its directory through a hook
+that awaits disposal first: a bare cleanup registered *before* the plugin's host is
+disposed deletes a directory the sync is still writing, which throws, leaves the case on
+disk, and makes the exit sweep refuse a root that is not empty — that is how scratch used
+to survive a green run. And timing bounds are relative to the machine rather than
+absolute: a case that asserts "this did not take two seconds" with a fixed millisecond
+bound fails when three suites share the CPU, which says nothing about the plugin.
 
 Run it from a session workspace: a directory that contains your repositories and
 is not itself one. The suite takes its root from the working directory and moves
