@@ -76,11 +76,12 @@ This file is the overview. The detail lives beside it:
 
 | Field | Default | Meaning |
 |---|---|---|
+| `plainMode` | `false` | **One switch** for the tool without the rules: no edit is refused, nothing is committed or pushed automatically, and no branch is protected — so a push to `main` needs no per-call flag. The guard is deliberately untouched: raw git in `bash` is still refused and redirected at the tool. While it is on, the settings it covers are ignored |
 | `worktreeRoot` | *(derived)* | Where per-task worktrees live: `<session workspace>/.worktrees` when unset. Set an absolute path to put them elsewhere |
 | `stateRoot` | `~/.dsh/state` | Where session ownership and push backoff are recorded |
 | `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push |
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
-| `protectedBranches` | `[main, master]` | The plugin's **own** list of branch names, matched literally against the checked-out branch — **not** GitHub's branch protection, which is never consulted. One list, two rules: never pushed automatically, and `autoWorktree` refuses an edit landing on one. A trunk named `trunk`/`develop` is not protected until it is listed here |
+| `protectedBranches` | `[main, master]` | The plugin's **own** list of branch names, matched literally against the checked-out branch — **not** GitHub's branch protection, which is never consulted. One list, two rules: never pushed automatically, and `autoWorktree` refuses an edit landing on one. A trunk named `trunk`/`develop` is not protected until it is listed here. An explicit `[]` protects nothing — that is the setting that lets a `push` to `main` through without `allowProtected` — while a list of blanks is treated as a typo and falls back to the default |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
 | `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow`. Set `deny` where nobody is at the approval prompt, so a turn fails fast with a reason instead of stalling |
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
@@ -147,12 +148,16 @@ The two settings most worth changing, and the one most worth knowing how to turn
 
 ### Running it as a plain git tool
 
-Two settings, and the guard stays:
+**One switch: `plainMode: true`** — on the Configure page, or in the patch layer. It turns
+off the edit refusal, the automatic commit, the automatic push and the protected-branch rule
+together, so a `push` to `main` works with no flag, and the individual settings it covers are
+ignored while it is on. Setting those four by hand does the same thing; the switch exists so
+that nobody has to find them.
 
-| Setting | Value | What it changes |
-|---|---|---|
-| `autoWorktree` | `off` | an edit into a repository on `main` is allowed, and no worktree is required |
-| `turnCommit`, `turnPush` | `false` | nothing is committed or pushed unless a call asks for it |
+The guard stays, and that is the point of it: raw `git commit` in `bash` is still refused and
+redirected at the tool, so the plugin is the path rather than an option. `guardMode: off` as
+well is the one combination this bundle does not survive — bash becomes a valid way to work,
+and everything it enforces becomes advice.
 
 What is left is an ordinary git interface — `status`, `commit`, `push`, `sync`, `pr`,
 `merge` — with `guardMode` still at `redirect`, which is what keeps the tool the way

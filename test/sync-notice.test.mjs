@@ -105,17 +105,21 @@ function fakeHost(c, options) {
 /**
  * A case whose repository is dirty, recorded, and never committed.
  *
- * The automatic commit is off on purpose: every run then finds work it must
- * report, which is the condition the duplicate notices were measured in. The
- * record is never dropped (nothing is committed), so each run reaches the same
- * repository and says the same thing.
+ * The commit is skipped by the file-count limit, so every run finds work it must
+ * report — the condition the duplicate notices were measured in — and the record
+ * is never dropped, because nothing is ever committed. This rode on
+ * `turnCommit: false` until that notice was made quiet: a configured off-switch is
+ * the configured outcome, not a skip to report, and saying it every turn is the
+ * noise the setting exists to avoid.
  */
 function noticeCase(name) {
   const c = makeCase(name);
-  const file = join(c.repoDir, 'written.txt');
-  writeFileSync(file, 'written during a turn\n');
-  assert.equal(record(c.sessionId, c.repoDir, file, { stateRoot: c.config.stateRoot }), true);
-  return { c, config: { ...c.config, turnCommit: false } };
+  for (const name of ['written.txt', 'written-too.txt']) {
+    const file = join(c.repoDir, name);
+    writeFileSync(file, 'written during a turn\n');
+    assert.equal(record(c.sessionId, c.repoDir, file, { stateRoot: c.config.stateRoot }), true);
+  }
+  return { c, config: { ...c.config, turnCommitMaxFiles: 1 } };
 }
 
 test('one trigger produces one notice', async (t) => {
@@ -140,7 +144,7 @@ test('one trigger produces one notice', async (t) => {
   assert.equal(observed.maxActive, 1, 'and one run at a time');
   assert.equal(host.injected.length, 1, 'one notice, not one per listener and one per run');
   assert.equal(host.woken.length, 1, 'the agent is woken once, for the one notice');
-  assert.match(host.injected[0].content[0].text, /turnCommit: false/u, 'and it is the run\'s own report');
+  assert.match(host.injected[0].content[0].text, /above the limit/u, 'and it is the run\'s own report');
   assert.equal(host.injected[0].source.kind, 'user', 'an inbox message still carries its producer');
 });
 
@@ -175,6 +179,6 @@ test('three requests folded into one run produce one notice per run', async (t) 
   assert.equal(host.injected.length, 2, 'one notice per run: two runs, two notices — not four');
   assert.equal(host.woken.length, 2, 'and one wake per notice');
   for (const message of host.injected) {
-    assert.match(message.content[0].text, /turnCommit: false/u, 'each notice is a run\'s own report');
+    assert.match(message.content[0].text, /above the limit/u, 'each notice is a run\'s own report');
   }
 });
