@@ -114,7 +114,9 @@ Only the fields you name are applied; every other field keeps its default. The r
 is `dsh-git`. Restart the Harness to load it — a plugin's row config is read when the
 plugin mounts.
 
-There is no Configure page. The settings live in this file, one line each.
+There is also a Configure page (Plugins → dsh-git → Configure) with one control: the
+`worktrees` toggle. It writes only that key, so it cannot leave anything else behind.
+The file above is still the way to change every other setting.
 
 ## Authentication
 
