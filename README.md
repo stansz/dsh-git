@@ -98,13 +98,7 @@ This file is the overview. The detail lives beside it:
 
 ### Changing a setting
 
-Two ways, and they compose. **Plugins → `dsh-git` → Configure** is the page: this
-bundle ships a browser half (`lib/client.js`) that registers into the Plugins page's
-`plugins.row.config` slot, and every field of the row's schema appears there with the
-description the schema carries. A change made there is picked up on the next tool call
-or turn boundary rather than at the next restart, because every field is `volatile()`.
-
-The other way is this bundle's row in the profile's own patch layer,
+A setting is changed by overriding this bundle's row in the profile's own patch layer,
 `~/.dsh/profiles/<name>/cordis.patch.yml`:
 
 ```yaml
@@ -116,19 +110,17 @@ The other way is this bundle's row in the profile's own patch layer,
 
 **Only the fields you name are applied.** Every other field keeps its default, so
 the block above is a complete configuration. The row id is `dsh-git` — the same id
-the bundle's own patch inserts. Restart the Harness to load it: a plugin's row
-config is read when the plugin mounts, so an edit here is inert until then — unlike a
-change made on the Configure page.
+the bundle's own patch inserts. Restart the Harness to load it: a plugin's row config
+is read when the plugin mounts, so an edit here is inert until then.
 
-A page took two attempts, and the reasons are worth keeping. The first was removed
-because a client half in the boot graph could take the front end down, and because the
-row's settings namespace is served only for fields marked `volatile()`: a field without
-it is a control that is silently *absent*, with nothing reporting why. This time the
-`volatile()` is applied to every field in one place, so a field cannot be added without
-it; the page renders an explanation instead of throwing when the Host serves it no
-namespace; and [`test/client-half.test.mjs`](test/client-half.test.mjs) runs the real
-bundle under node — registration, slot key, the write op it sends, and both states it
-cannot fix — so the browser half is covered by CI rather than by opening a browser.
+**There is no Configure page, and that is a decision rather than an omission.** One was
+built twice and shipped once. What retired it is the mechanism: the Plugins page writes a
+row's configuration into this same patch file, and a row's config is read when the plugin
+mounts — so a page cannot change a setting live, and a save rewrote the file with values
+nobody asked for (turning plain mode on left `autoWorktree: off` behind it, which then
+looked like plain mode still being on after it was turned off). A settings surface whose
+effect arrives at the next restart, and whose writes edit a file the user maintains by
+hand, is worse than the file. The settings live here, one line each.
 
 The two settings most worth changing, and the one most worth knowing how to turn off:
 
@@ -148,11 +140,10 @@ The two settings most worth changing, and the one most worth knowing how to turn
 
 ### Running it as a plain git tool
 
-**One switch: `plainMode: true`** — on the Configure page, or in the patch layer. It turns
-off the edit refusal, the automatic commit, the automatic push and the protected-branch rule
-together, so a `push` to `main` works with no flag, and the individual settings it covers are
-ignored while it is on. Setting those four by hand does the same thing; the switch exists so
-that nobody has to find them.
+**One setting: `plainMode: true`**, then restart. It turns off the edit refusal, the automatic
+commit, the automatic push and the protected-branch rule together, so a `push` to `main`
+works with no flag, and the individual settings it covers are ignored while it is on.
+Setting those four by hand does the same thing; this exists so nobody has to find them.
 
 The guard stays, and that is the point of it: raw `git commit` in `bash` is still refused and
 redirected at the tool, so the plugin is the path rather than an option. `guardMode: off` as
