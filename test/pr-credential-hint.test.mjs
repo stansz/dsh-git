@@ -59,7 +59,7 @@ function credentialless(c, t, pathValue) {
   });
 }
 
-test('B3: with no gh installed, the advice is to install it', async (t) => {
+test('B3: with no gh installed, the advice leads with the route that needs no install', async (t) => {
   const c = makeCase('pr-gh-missing');
   t.after(() => c.cleanup());
   credentialless(c, t, pathWithoutGh(c));
@@ -69,8 +69,11 @@ test('B3: with no gh installed, the advice is to install it', async (t) => {
   assert.equal(opened.ok, false);
   assert.equal(opened.error.code, 'no-credentials');
   assert.match(String(opened.error.message), /ENOENT|not be started/u, 'the token chain could not run gh at all');
-  assert.match(String(opened.error.hint ?? ''), /Install the GitHub CLI/u, 'so the advice is the install');
-  assert.ok(String(opened.error.hint ?? '').includes('GH_TOKEN'), 'and it names the no-install route');
+  const hint = String(opened.error.hint ?? '');
+  assert.match(hint, /GH_TOKEN/u, 'the advice names the option that needs nothing installed');
+  assert.match(hint, /install the GitHub CLI/iu, 'and the install, as the alternative');
+  assert.ok(hint.indexOf('GH_TOKEN') < hint.search(/install the GitHub CLI/iu),
+    'the install-free option leads: this plugin does not make the GitHub CLI the workflow');
 });
 
 test('B3 control: with gh installed but logged out, the advice is to log in', async (t) => {
@@ -91,5 +94,5 @@ test('B3 control: with gh installed but logged out, the advice is to log in', as
   assert.equal(opened.error.code, 'no-credentials');
   assert.match(String(opened.error.message), /no oauth token found/u, 'gh ran and answered');
   assert.match(String(opened.error.hint ?? ''), /Run `gh auth login`/u, 'the advice is to log in');
-  assert.doesNotMatch(String(opened.error.hint ?? ''), /Install the GitHub CLI/u, 'and not to install what is already there');
+  assert.doesNotMatch(String(opened.error.hint ?? ''), /install the GitHub CLI/iu, 'and not to install what is already there');
 });

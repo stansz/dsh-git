@@ -124,6 +124,12 @@ test('A2: the sentence is added only when the failure is about a credential', ()
     assert.match(gitLib.explainCredentialFailure(text), /gh auth setup-git/u);
   }
 
+  const hint = String(gitLib.credentialHint(cases[0]) ?? '');
+  assert.ok(hint.indexOf('SSH') < hint.indexOf('gh auth setup-git'),
+    'an SSH remote is offered before the GitHub CLI');
+  assert.ok(hint.indexOf('credential helper') < hint.indexOf('gh auth setup-git'),
+    'and so is the credential helper the machine already has');
+
   const network = 'fatal: unable to access https://github.com/octo/repo.git/: Could not resolve host: github.com';
   assert.equal(gitLib.credentialHint(network), undefined, 'a network failure is not a credential failure');
   assert.equal(gitLib.explainCredentialFailure(network), network, 'and it is passed through untouched');

@@ -135,7 +135,8 @@ The setting most worth changing, and the one most worth knowing how to turn off:
 Nothing is stored here. `git` runs with `HOME` and `PATH` preserved, so the
 machine's own credential helper resolves credentials — on this machine that is
 `osxkeychain` from the system gitconfig. GitHub API calls use
-`GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
+`GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>` — the first two need
+nothing installed — read lazily,
 never logged, never written to disk, and redacted from every error. Neither half is
 interactive: prompting is off (`GIT_TERMINAL_PROMPT=0`, no askpass), so nothing can block on
 a question with nobody to answer it — and a credential embedded in a remote URL is dropped
@@ -146,7 +147,8 @@ reading a public repository needs no credential at all, so a new machine looks
 healthy until its first push, and `GH_TOKEN` never helps a push. A push **or a
 fetch** that fails for want of a credential is reported with the fix: a fetch states
 it as `next:`, while for a push the note the turn ends with and the record `status`
-prints both name `gh auth setup-git`, a credential helper, or an SSH remote. A
+prints both name a credential helper, an SSH remote, or — when the GitHub CLI is
+present — `gh auth setup-git`. A
 *failure* is not remembered: the chain is asked again on the next
 call, so `gh auth login` in a terminal is picked up without restarting the Harness.
 [`docs/install.md`](docs/install.md#authentication-on-a-new-machine) is the
