@@ -94,3 +94,28 @@ test('a branch with no commits is not protected: a new project can write its fir
   const after = await evaluateWorktree(writeCall(c.sessionId, join(fresh, 'src', 'second.js')), config, { cwd: c.reference });
   assert.equal(after.kind, 'deny', 'a commit on main makes the rule apply again');
 });
+
+test('protection is a literal name match on this plugin\'s own list', async (t) => {
+  const c = makeCase('protected-is-a-name-list');
+  t.after(() => c.cleanup());
+  const config = protectedConfig(c);
+
+  // This case pins behaviour rather than a fix: it passes against the library this
+  // change replaces too. It is here because the wording around "protected" invites a
+  // reader to hear GitHub's branch protection, or "worktrees always" — and both are
+  // wrong. Rename the trunk: still `main` nowhere, so nothing refuses the edit.
+  git(c.repoDir, ['branch', '-m', 'trunk']);
+  const onTrunk = await evaluateWorktree(writeCall(c.sessionId, join(c.repoDir, 'src', 'edit.js')), config, { cwd: c.reference });
+  assert.equal(onTrunk.kind, 'allow', 'a trunk named trunk is not in protectedBranches, so nothing refuses the edit');
+
+  // Listing the name is the whole fix, and it is a local list: no server setting is read.
+  const listed = resolveConfig({
+    worktreeRoot: join(c.root, '.worktrees'),
+    stateRoot: join(c.root, 'state'),
+    autoWorktree: 'protected',
+    protectedBranches: ['trunk'],
+  });
+  const denied = await evaluateWorktree(writeCall(c.sessionId, join(c.repoDir, 'src', 'edit.js')), listed, { cwd: c.reference });
+  assert.equal(denied.kind, 'deny', 'once the name is listed, the same edit is refused');
+  assert.match(denied.displayReason, /on "trunk"/u, 'and the refusal names the branch it matched');
+});
