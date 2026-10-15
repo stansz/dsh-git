@@ -37,9 +37,9 @@ An install that already exists does **not** follow along by itself: the resolved
 written into that profile's `pnpm-lock.yaml`, and `pnpm install` keeps it. To move that
 machine to the current `main`, run `pnpm update dsh-git` there and restart the Harness.
 
-**When you want a name rather than a date.** CI moves the tag `latest` onto every push to
-`main` whose suite passed on ubuntu and macOS, so this ref is always the newest revision
-that did:
+**When you want a name rather than a date.** The tag `latest` exists on the repository,
+but CI is currently disabled so nothing moves it automatically. Pin a commit or use the
+default branch:
 
 ```bash
 pnpm add github:stansz/dsh-git#latest
