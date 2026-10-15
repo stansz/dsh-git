@@ -99,8 +99,11 @@ Two independent credentials, and a new machine usually has only the first:
   Harness's environment. `status` with `pull: true` reports a lookup that failed
   rather than showing nothing, so a missing token is visible where a person looks.
 
-`gh auth status` shows the `gh` login. After `gh auth login` there is nothing to
-restart: a credential failure is not remembered, so the next call asks again.
+`gh auth status` shows the `gh` login. A machine with no `gh` installed is told to
+install it rather than to log in to it — and told that `GH_TOKEN` needs no install
+— because the failure the token chain reports already says which of the two is
+missing. After `gh auth login` there is nothing to restart: a credential failure is
+not remembered, so the next call asks again.
 
 ## `link:` or GitHub?
 

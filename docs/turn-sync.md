@@ -73,8 +73,13 @@ answer skips the push: commits the base does not have are published as before, w
 keeps a worktree's only copy of its work off the floor.
 
 What is never done: pushing a protected branch, pushing a branch the base already
-contains, committing during a merge, rebase or cherry-pick, or committing more paths
-than `turnCommitMaxFiles`.
+contains, committing during a merge, rebase or cherry-pick, committing more paths
+than `turnCommitMaxFiles`, or pushing a repository that has no `origin` remote at
+all. That last one is not a failure — it is the shape of a repository with nowhere
+to push to — so it is skipped in silence rather than reported: a project started
+before it has a remote gets no notice and no backoff, and `status` still shows the
+branch and its commits. Action `push` asked for by hand says so directly instead
+(`no-remote`, with the `git remote add origin <url>` that fixes it).
 
 ## When the automatic sync cannot finish
 

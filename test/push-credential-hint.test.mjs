@@ -121,11 +121,11 @@ test('A2: the sentence is added only when the failure is about a credential', ()
   ];
   for (const text of cases) {
     assert.match(String(gitLib.credentialHint(text) ?? ''), /gh auth setup-git/u, 'a credential failure is explained: ' + text);
-    assert.match(gitLib.explainPushFailure(text), /gh auth setup-git/u);
+    assert.match(gitLib.explainCredentialFailure(text), /gh auth setup-git/u);
   }
 
   const network = 'fatal: unable to access https://github.com/octo/repo.git/: Could not resolve host: github.com';
   assert.equal(gitLib.credentialHint(network), undefined, 'a network failure is not a credential failure');
-  assert.equal(gitLib.explainPushFailure(network), network, 'and it is passed through untouched');
-  assert.equal(gitLib.explainPushFailure(''), '');
+  assert.equal(gitLib.explainCredentialFailure(network), network, 'and it is passed through untouched');
+  assert.equal(gitLib.explainCredentialFailure(''), '');
 });
