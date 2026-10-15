@@ -33,19 +33,10 @@ touched. `workspace` scans for any dirty repository under the working directory 
 use it for a single session working alone. Within a repository the session has
 established as its own, everything dirty is committed.
 
-**Turn push.** The commit is then pushed, but only when the branch is one that is
-safe to push: a task branch under `branchPrefix`, or the branch of a worktree
-this session owns. `main` and `master` are never pushed automatically. A commit
-made in a throwaway worktree that is never pushed is work that gets deleted with
-the worktree, so for those branches pushing is not a convenience.
-
-A branch whose work is already in `origin/<base>` is not pushed either. That is what a
-merged task branch looks like: action `merge` deletes the remote branch it merged, the
-next fetch prunes the tracking ref that recorded it, and "no upstream" then reads exactly
-like "never published" — which is how a branch a merge had just removed came back on the
-remote. The question is asked of refs on disk (no round trip, no API), and only a positive
-answer skips the push: commits the base does not have are published as before, which is what
-keeps a worktree's only copy of its work off the floor.
+**Turn push.** The commit is pushed when the branch is safe to push: a task branch
+under `branchPrefix`, or the branch of a worktree this session owns. `main` and
+`master` are never pushed automatically. A branch whose work is already in
+`origin/<base>` is not pushed either — that is what a merged task branch looks like.
 
 What is never done: pushing a protected branch, pushing a branch the base already
 contains, committing during a merge, rebase or cherry-pick, committing more paths
