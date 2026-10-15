@@ -136,7 +136,10 @@ Nothing is stored here. `git` runs with `HOME` and `PATH` preserved, so the
 machine's own credential helper resolves credentials — on this machine that is
 `osxkeychain` from the system gitconfig. GitHub API calls use
 `GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
-never logged, never written to disk, and redacted from every error.
+never logged, never written to disk, and redacted from every error. Neither half is
+interactive: prompting is off (`GIT_TERMINAL_PROMPT=0`, no askpass), so nothing can block on
+a question with nobody to answer it — and a credential embedded in a remote URL is dropped
+wherever a remote is reported, so `status` shows the host and the path, never the userinfo.
 
 The two halves share nothing, and a fresh machine usually has only one of them:
 reading a public repository needs no credential at all, so a new machine looks
