@@ -88,22 +88,30 @@ Two independent credentials, and a new machine usually has only the first:
   healthy right up to its first push.
 - **Writing needs that machine's own git credential.** This plugin passes `HOME`
   and `PATH` through to git, and disables prompting (`GIT_TERMINAL_PROMPT=0`, and no
-  askpass), because a question with nobody to answer it would hang the call. So set
-  one up in a terminal before working here:
-  - HTTPS remote: `gh auth setup-git`, or a helper of your own —
-    `git config --global credential.helper osxkeychain` on macOS, `store` or
-    `cache` elsewhere.
-  - SSH remote: a key that is loaded and accepted; `ssh -T git@github.com` says so.
-- **Pull requests and merges need a GitHub token**, which is a different credential
-  and does not help a push: `gh auth login`, or `GH_TOKEN`/`GITHUB_TOKEN` in the
-  Harness's environment. `status` with `pull: true` reports a lookup that failed
-  rather than showing nothing, so a missing token is visible where a person looks.
+  askpass), because a question with nobody to answer it would hang the call. Set one
+  up in a terminal before working here, by either route — neither needs an install:
+  - **An SSH remote.** A key that is loaded and accepted; `ssh -T git@github.com`
+    says so. No credential helper and no prompt.
+  - **A credential helper, for an HTTPS remote.** macOS ships `osxkeychain`
+    already; Linux has `libsecret` (GNOME) or `cache`; `store` writes a plaintext
+    file and is the last resort. Configure one and authenticate once in a terminal,
+    because a tool call here cannot prompt.
+- **Pull requests and merges need a GitHub token**, a different credential that does
+  not help a push: `GH_TOKEN` or `GITHUB_TOKEN` in the Harness's environment — no
+  install needed. `status` with `pull: true` reports a lookup that failed rather
+  than showing nothing, so a missing token is visible where a person looks.
 
-`gh auth status` shows the `gh` login. A machine with no `gh` installed is told to
-install it rather than to log in to it — and told that `GH_TOKEN` needs no install
-— because the failure the token chain reports already says which of the two is
-missing. After `gh auth login` there is nothing to restart: a credential failure is
-not remembered, so the next call asks again.
+**The GitHub CLI is optional, and nothing here requires it.** When it is installed,
+`gh auth setup-git` writes the HTTPS helper configuration for you, `gh auth login`
+stores the token the chain's last step reads, and `gh auth status` shows that login.
+When it is not, the advice leads with `GH_TOKEN` and names the install second — the
+failure the token chain reports already says which of the two is missing. After
+`gh auth login` there is nothing to restart: a credential failure is not remembered,
+so the next call asks again.
+
+Every route keeps the secret somewhere — a key file, the operating system's store,
+or whatever launches the Harness — and none of them is stored by this plugin, which
+reads a credential only while a git or API call needs one.
 
 ## `link:` or GitHub?
 
