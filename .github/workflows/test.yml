@@ -41,3 +41,33 @@ jobs:
           # removes it itself, which keeps a leak visible rather than buried in the tree.
           DSH_GIT_TEST_ROOT: ${{ runner.temp }}/dsh-git-tests
           GIT_TERMINAL_PROMPT: "0"
+
+  # A ref that is always current, for a machine that wants to name one.
+  #
+  # An unpinned `github:` spec already follows the default branch, so a fresh install
+  # needs nothing here. What needs a job is the other half: a machine that wants a
+  # stable NAME rather than a date, and a person who does not want to maintain a
+  # version number to have one. So `latest` moves onto every green push to main - it
+  # is the newest revision that passed the matrix above, on both platforms, and it
+  # moves only after that matrix passes.
+  #
+  # `latest` is the one tag in this repository that is MEANT to move. A version tag
+  # must never be re-pointed: a pinned install would silently become different code,
+  # which is the property the pin exists to provide. If version tags are ever added,
+  # they are published once, from a commit that already passed here.
+  latest:
+    name: move the latest tag
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: point latest at this commit
+        run: |
+          git tag -f latest
+          git push --force origin latest
+          # Read it back rather than trust the push: a green check here has to mean the
+          # tag really is on this commit.
+          test "$(git ls-remote --tags origin refs/tags/latest | cut -f1)" = "$(git rev-parse HEAD)"

@@ -28,13 +28,34 @@ mkdir -p ~/.dsh/profiles/<name> && cd ~/.dsh/profiles/<name>
 pnpm add github:stansz/dsh-git
 ```
 
-**Pin it if you want reproducibility.** An unpinned `github:` spec follows the
-default branch, so a fresh install on another machine gets whatever is newest at
-that moment. To freeze a known-good state, name the ref:
+**What an unpinned install gets you.** `github:stansz/dsh-git` follows the default branch,
+so a fresh install on another machine gets whatever `main` is at that moment. That is the
+right default for a second machine of your own, and it is why installing this needs no
+release step.
+
+An install that already exists does **not** follow along by itself: the resolved commit is
+written into that profile's `pnpm-lock.yaml`, and `pnpm install` keeps it. To move that
+machine to the current `main`, run `pnpm update dsh-git` there and restart the Harness.
+
+**When you want a name rather than a date.** CI moves the tag `latest` onto every push to
+`main` whose suite passed on ubuntu and macOS, so this ref is always the newest revision
+that did:
 
 ```bash
-pnpm add github:stansz/dsh-git#v0.1.0
+pnpm add github:stansz/dsh-git#latest
 ```
+
+`latest` is the one tag here that is *meant* to move. To freeze a state instead, pin a
+commit — a branch, a tag or a commit sha all work after the `#`:
+
+```bash
+pnpm add github:stansz/dsh-git#7bcd905     # any commit, frozen
+```
+
+Version tags (`v0.2.0`) would be the third option, and they would never move — but there
+are none yet, and a version nothing releases is a promise nothing keeps. Add them on the
+day somebody other than you installs this, or the day you would write a changelog; the
+`latest` job does not conflict with that.
 
 Then make the profile load the bundle — one line in its own `package.json`:
 
