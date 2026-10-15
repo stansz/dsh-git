@@ -291,17 +291,22 @@ test('the sync that runs is the sync that speaks', async (t) => {
     await host?.dispose();
     c.cleanup();
   });
-  // The automatic commit is switched off, so the tree is left dirty and the sync
-  // has something it must report. Before this was fixed the path that actually
-  // ran said it to a log file and to nobody else.
-  host = fakeHost(c, { config: { ...c.config, turnCommit: false } });
+  // The commit is skipped by the file-count limit, so the tree stays dirty and the
+  // sync has something it must report. Before this was fixed the path that actually
+  // ran said it to a log file and to nobody else. (It used to be `turnCommit: false`,
+  // whose notice is now quiet by design: a configured off-switch is the configured
+  // outcome, not a skip to report.)
+  const second = join(c.repoDir, 'written-too.txt');
+  writeFileSync(second, 'also written during a turn\n');
+  assert.equal(store.record(c.sessionId, c.repoDir, second, { stateRoot: c.config.stateRoot }), true);
+  host = fakeHost(c, { config: { ...c.config, turnCommitMaxFiles: 1 } });
 
   host.toolCall();
   const deadline = Date.now() + 15000;
   while (host.injected.length === 0 && Date.now() < deadline) await wait(25);
   assert.equal(headSubject(c.repoDir), 'chore: the fixture repository', 'nothing was committed, as configured');
   assert.equal(host.injected.length, 1, 'the model is told, not just the Host log');
-  assert.match(host.injected[0].content[0].text, /turnCommit: false/u);
+  assert.match(host.injected[0].content[0].text, /above the limit/u);
   assert.equal(typeof host.injected[0].id, 'string', 'an inbox message needs a stable id');
   assert.equal(host.injected[0].source.kind, 'user');
   assert.equal(host.woken.length, 1, 'and the agent is woken, or the note waits for an unrelated prompt');

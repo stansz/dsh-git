@@ -83,7 +83,11 @@ branch and its commits. Action `push` asked for by hand says so directly instead
 
 ## When the automatic sync cannot finish
 
-The turn sync is built so that declining to commit is never quiet. A skip, a
+The turn sync is built so that declining to commit is never quiet — with one exception,
+and it is deliberate: `turnCommit: false` leaves the tree alone *by configuration*, and so
+says nothing. A configured outcome is not a skip to report, and naming the same tree every
+turn is the noise that trains a reader to skip the message that matters; `status` still shows
+it dirty. A skip,
 refused push, a timeout and an unexpected failure all produce a message the
 **model** reads — not only a Host log line. Every boundary reports this, including
 the tools-layer one that does most of the committing. It used to write its
