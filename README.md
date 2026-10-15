@@ -17,14 +17,9 @@ configuration at all. The two worth changing are in
 
 ## Why this exists
 
-DSH had no git tool. Every session reached git through `bash`, invented its own
-incantation, and stopped wherever it happened to stop. The residue was dirty
-working trees and unpushed commits that nothing reported, because nothing was
-looking.
-
-Supplying better commands does not fix that — a command nobody runs is the
-original bug. So this bundle contributes four things, and the last two are the
-ones that change the outcome:
+Raw `git` through `bash` was inconsistent: sessions left work uncommitted and
+unpushed, and nothing reported it. This bundle contributes four things, and the
+last two are the ones that fix it:
 
 | Contribution | What it is |
 |---|---|
