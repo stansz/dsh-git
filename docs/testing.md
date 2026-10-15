@@ -1,19 +1,14 @@
 # Tests
 
-How to run the suite, the real fixtures it builds, what CI does with it, and the rule
-that a new test must fail against the pre-change library. Part of
-[dsh-git](../README.md) — the overview, the settings and the requirements are there.
+How to run the suite and what it covers. Part of [dsh-git](../README.md).
 
 ```bash
 npm test
 ```
 
-CI runs exactly this on every push and pull request — ubuntu and macOS on Node 22 and
-24, with no `npm install` because the bundle's one dependency is loaded defensively and
-the suite needs no third-party code. The matrix is the point rather than decoration: the
-bug class this code keeps hitting is path identity, and that is what differs between
-platforms, so a suite that only ever ran on one machine was measuring less than it looked
-like.
+CI is currently disabled — the workflow trigger in `.github/workflows/test.yml` is
+`workflow_dispatch` only, so nothing runs on push or pull request. Re-enable it by
+restoring the `on:` block.
 
 `node --test` runs the `test/**/*.test.mjs` glob. Nothing is mocked: every case
 builds a real repository with a real bare origin inside a workspace directory,
