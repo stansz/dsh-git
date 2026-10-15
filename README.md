@@ -84,7 +84,7 @@ This file is the overview. The detail lives beside it:
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
 | `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow`. Set `deny` where nobody is at the approval prompt, so a turn fails fast with a reason instead of stalling |
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
-| `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses an edit to a repository on a protected branch. `always` refuses an edit to any repository this session has no worktree for |
+| `autoWorktree` | `protected` | `protected` refuses an edit to a repository on a protected branch and points at `action: "start"`. `off` never refuses. `always` refuses an edit to any repository this session has no worktree for. A branch with no commits yet is never protected — a new project can write its first file |
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>` when a turn boundary reported a number, and `dsh: <paths>` otherwise — which is always, for the boundary driven from the tools layer; `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
 | `turnPush` | `true` | Push each turn when the branch is safe |
@@ -114,11 +114,8 @@ the block above is a complete configuration. The row id is `dsh-git` — the sam
 the bundle's own patch inserts. Restart the Harness to load it: a plugin's row
 config is read when the plugin mounts, so an edit here is inert until then.
 
-The two settings most worth changing:
+The setting most worth changing, and the one most worth knowing how to turn off:
 
-- **`autoWorktree: protected`** if you would rather work never landed on `main` at
-  all. From then on an edit to a repository on a protected branch is refused, and
-  the refusal points at the `git` tool's `action: "start"`.
 - **`worktreeRoot`** to put worktrees somewhere other than the default. Empty —
   the default, and what almost every deployment wants — derives the root from the
   session's own workspace (`<session workspace>/.worktrees`), which is inside the
@@ -126,6 +123,11 @@ The two settings most worth changing:
   **absolute** path to move them; a relative one resolves against the Harness home.
   Wherever you point it, keep it outside every repository, or the worktree becomes
   a second copy of the tree inside the repository that created it.
+- **`autoWorktree: off`** if you would rather nothing refused an edit. It defaults
+  to `protected`: an edit to a repository on a protected branch is refused, and the
+  refusal points at the `git` tool's `action: "start"`. Turn it off where working
+  on `main` is the point and a second checkout is not wanted, or set `always` where
+  isolation should hold for every branch.
 
 ## Authentication
 
