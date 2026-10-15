@@ -165,7 +165,8 @@ still works, with a less precise commit subject — and registers on
 npm test
 ```
 
-The suite builds real repositories and drives the plugin's own functions; nothing is
-mocked. CI is currently disabled (the workflow trigger is `workflow_dispatch` only) and
-the suite is optional — see [`docs/testing.md`](docs/testing.md).
+The test directory is not present in this checkout — the old suite tested internal
+modules rather than the behaviour the plugin promises. CI is disabled (the workflow
+trigger is `workflow_dispatch` only). What to test if the suite is ever restored is in
+[`docs/testing.md`](docs/testing.md).
 
