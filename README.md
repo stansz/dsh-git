@@ -165,8 +165,7 @@ still works, with a less precise commit subject — and registers on
 npm test
 ```
 
-The suite builds real repositories — a bare origin and a clone — and drives the plugin's
-own functions; nothing is mocked. It runs in CI on every push and pull request: ubuntu and
-macOS, Node 22 and 24. What it covers, and why a new test must fail against the
-pre-change library before it counts, is in [`docs/testing.md`](docs/testing.md).
+The suite builds real repositories and drives the plugin's own functions; nothing is
+mocked. CI is currently disabled (the workflow trigger is `workflow_dispatch` only) and
+the suite is optional — see [`docs/testing.md`](docs/testing.md).
 
