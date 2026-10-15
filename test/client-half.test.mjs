@@ -147,6 +147,35 @@ test('a change writes the op shape the Host expects, with the current revision',
   assert.deepEqual(pageTarget.writes[0].ops, [{ op: 'set', path: ['turnPush'], value: false }]);
 });
 
+test('plain mode puts the settings it overrides out of play, and says so', () => {
+  const page = client.ConfigPage({ view: 'page', form: makeForm({ plainMode: true }).form });
+  const fields = elements(page).filter((node) => node.type === client.Field);
+  const byPath = new Map(fields.map((node) => [node.props.field.path, node.props]));
+  for (const path of client.PLAIN_MODE_OVERRIDES) {
+    assert.equal(byPath.get(path).disabled, true, path + ' must not look operable while plain mode ignores it');
+    assert.equal(byPath.get(path).overridden, true, path + ' must carry the reason it is out of play');
+  }
+  for (const path of ['guardMode', 'githubHost', 'prDraft']) {
+    assert.equal(byPath.get(path).disabled, false, path + ' is not overridden by plain mode');
+  }
+  const text = elements(page).filter((node) => node.type === 'p').map((node) => node.children.join('')).join(' ');
+  assert.match(text, /out of play/u, 'the page explains the state once');
+
+  // The per-field line lives inside the field component, so it has to be rendered to be
+  // seen: the page tree holds `Field` elements, not their output.
+  const rendered = client.Field(byPath.get('autoWorktree'));
+  const fieldText = elements(rendered).filter((node) => node.type === 'p').map((node) => node.children.join('')).join(' ');
+  assert.match(fieldText, /Out of play: plain mode overrides this/u, 'the field itself says why it is dim');
+  const normal = client.Field(byPath.get('guardMode'));
+  const normalText = elements(normal).filter((node) => node.type === 'p').map((node) => node.children.join('')).join(' ');
+  assert.doesNotMatch(normalText, /Out of play/u, 'a control plain mode does not touch says nothing');
+
+  const plainOff = client.ConfigPage({ view: 'page', form: makeForm({ plainMode: false, turnPush: false }).form });
+  const offFields = new Map(elements(plainOff).filter((node) => node.type === client.Field).map((node) => [node.props.field.path, node.props]));
+  assert.equal(offFields.get('turnPush').disabled, false, 'with plain mode off the control works again');
+  assert.equal(offFields.get('turnPush').value, false, 'and the value it kept is what is shown');
+});
+
 test('a form the Host never served explains itself instead of rendering nothing', () => {
   const page = client.ConfigPage({ view: 'page', form: undefined });
   const alert = elements(page).find((node) => node.props?.role === 'alert');
