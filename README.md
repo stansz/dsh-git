@@ -80,11 +80,11 @@ This file is the overview. The detail lives beside it:
 | `stateRoot` | `~/.dsh/state` | Where session ownership and push backoff are recorded |
 | `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push |
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
-| `protectedBranches` | `[main, master]` | Never pushed automatically |
+| `protectedBranches` | `[main, master]` | The plugin's **own** list of branch names, matched literally against the checked-out branch — **not** GitHub's branch protection, which is never consulted. One list, two rules: never pushed automatically, and `autoWorktree` refuses an edit landing on one. A trunk named `trunk`/`develop` is not protected until it is listed here |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
 | `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow`. Set `deny` where nobody is at the approval prompt, so a turn fails fast with a reason instead of stalling |
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
-| `autoWorktree` | `protected` | `protected` refuses an edit to a repository on a protected branch and points at `action: "start"`. `off` never refuses. `always` refuses an edit to any repository this session has no worktree for. A branch with no commits yet is never protected — a new project can write its first file |
+| `autoWorktree` | `protected` | `protected` refuses an edit landing in a repository whose checked-out branch is in `protectedBranches`, and points at `action: "start"`. `off` never refuses. `always` refuses an edit to any repository this session has no worktree for — that is the worktrees-for-everything mode, and it is not this one. A branch with no commits yet is never protected, so a new project can write its first file |
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>` when a turn boundary reported a number, and `dsh: <paths>` otherwise — which is always, for the boundary driven from the tools layer; `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
 | `turnPush` | `true` | Push each turn when the branch is safe |
@@ -124,10 +124,11 @@ The setting most worth changing, and the one most worth knowing how to turn off:
   Wherever you point it, keep it outside every repository, or the worktree becomes
   a second copy of the tree inside the repository that created it.
 - **`autoWorktree: off`** if you would rather nothing refused an edit. It defaults
-  to `protected`: an edit to a repository on a protected branch is refused, and the
-  refusal points at the `git` tool's `action: "start"`. Turn it off where working
-  on `main` is the point and a second checkout is not wanted, or set `always` where
-  isolation should hold for every branch.
+  to `protected`: an edit landing in a repository checked out on a branch in
+  `protectedBranches` is refused, and the refusal points at the `git` tool's
+  `action: "start"`. Turn it off where working on `main` is the point and a second
+  checkout is not wanted, or set `always` where isolation should hold for every
+  branch — `always` is the worktrees-for-everything mode, `protected` is not.
 
 ## Authentication
 

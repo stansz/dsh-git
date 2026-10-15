@@ -14,7 +14,7 @@ instruction as far as it understood it.
 
 | Mode | An edit is refused when |
 |---|---|
-| `protected` *(default)* | the target repository is on a protected branch and the edit is not already inside this session's worktree |
+| `protected` *(default)* | the target repository is checked out on a branch named in `protectedBranches` (default `main`, `master`) and the edit is not already inside this session's worktree |
 | `off` | never — the tool description and the git guard are the whole story |
 | `always` | the target repository has no worktree for this session, on any branch |
 
@@ -25,6 +25,17 @@ work lands. A rule that has to be switched on is the failure this bundle exists 
 The cost is one refused edit and the `start` call the refusal names. Set `off` where
 work on `main` is the point — a solo repository, a config fix, a machine where a second
 checkout is expensive — and `always` where isolation should hold on every branch.
+
+**"Protected" here is this plugin's own list, not GitHub's.** `protectedBranches` is
+matched literally against the checked-out branch name, locally; no server-side branch
+protection is consulted, and turning it on in GitHub changes nothing here. `protected`
+also does not mean "worktrees always": that is `always`. On any branch outside the list
+the rule has nothing to say, worktree or no worktree.
+
+The trap that follows: **a trunk named anything else is not protected.** `trunk`,
+`develop`, `production`, or a default branch you renamed is watched by nothing until
+the name is added to `protectedBranches`, and the match is exact — `Main` is a
+different branch.
 
 **A branch with no commits is never protected.** `git init -b main` reports the name
 `main` before `main` exists; treating that as protected refused the first file of every
