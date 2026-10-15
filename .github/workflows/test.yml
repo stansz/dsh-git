@@ -1,9 +1,14 @@
 name: test
 
+# Disabled for now: the test matrix and the auto-moving `latest` tag were slowing
+# down small changes and pulling focus away from the actual work. Re-enable with:
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+# The jobs below are untouched and will run as-is when the trigger is restored.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
