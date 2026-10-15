@@ -74,88 +74,52 @@ This file is the overview. The detail lives beside it:
 
 ## Settings
 
+One switch is worth knowing. Everything else is there for the plugin's own internals
+and rarely needs touching.
+
 | Field | Default | Meaning |
 |---|---|---|
-| `plainMode` | `false` | **One switch** for the tool without the rules: no edit is refused, nothing is committed or pushed automatically, and no branch is protected — so a push to `main` needs no per-call flag. The guard is deliberately untouched: raw git in `bash` is still refused and redirected at the tool. While it is on, the settings it covers are ignored |
+| **`worktrees`** | `false` | **The switch for worktree mode.** `true` refuses an edit landing on a protected branch and points at `action: "start"`, so work goes into a worktree on a task branch. `false` is regular mode — edit anywhere, no worktree required. Sets `autoWorktree` and `protectedBranches` together; a named key beside it wins |
 | `worktreeRoot` | *(derived)* | Where per-task worktrees live: `<session workspace>/.worktrees` when unset. Set an absolute path to put them elsewhere |
 | `stateRoot` | `~/.dsh/state` | Where session ownership and push backoff are recorded |
 | `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push |
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
-| `protectedBranches` | `[main, master]` | The plugin's **own** list of branch names, matched literally against the checked-out branch — **not** GitHub's branch protection, which is never consulted. One list, two rules: never pushed automatically, and `autoWorktree` refuses an edit landing on one. A trunk named `trunk`/`develop` is not protected until it is listed here. An explicit `[]` protects nothing — that is the setting that lets a `push` to `main` through without `allowProtected` — while a list of blanks is treated as a typo and falls back to the default |
+| `protectedBranches` | `[]` | The plugin's own list of branch names, matched literally against the checked-out branch. Never pushed automatically, and `autoWorktree` refuses an edit landing on one. An explicit `[]` lets a `push` to `main` through without `allowProtected`. `worktrees: true` sets this to `[main, master]` |
+| `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses one landing on a protected branch. `always` refuses one landing outside a worktree. `worktrees: true` sets `protected` |
 | `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
-| `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow`. Set `deny` where nobody is at the approval prompt, so a turn fails fast with a reason instead of stalling |
-| `guardTools` | `[bash, pwsh]` | Which tools the guard inspects — both shell tools the Harness ships. A tool not listed is not inspected |
-| `autoWorktree` | `protected` | `protected` refuses an edit landing in a repository whose checked-out branch is in `protectedBranches`, and points at `action: "start"`. `off` never refuses. `always` refuses an edit to any repository this session has no worktree for — that is the worktrees-for-everything mode, and it is not this one. A branch with no commits yet is never protected, so a new project can write its first file |
+| `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow` |
+| `guardTools` | `[bash, pwsh]` | Which tools the guard inspects |
 | `turnCommit` | `true` | Commit each turn's changes |
-| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>` when a turn boundary reported a number, and `dsh: <paths>` otherwise — which is always, for the boundary driven from the tools layer; `{turn}` and `{paths}` are substituted, and `{turn}` is empty when there is no number |
+| `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`, or `dsh: <paths>` with no turn number. `{turn}` and `{paths}` are substituted |
 | `turnPush` | `true` | Push each turn when the branch is safe |
 | `turnSyncScope` | `session` | `session` commits only repositories this session changed; `workspace` also scans for any dirty repository |
 | `turnCommitMaxFiles` | `200` | Skip above this many changed paths |
-| `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync. A sync that runs out of time is reported, not silent |
+| `turnSyncTimeoutMs` | `20000` | Budget for one end-of-turn sync |
 | `githubHost` | `github.com` | Set for GitHub Enterprise |
 | `prDraft` | `false` | Open pull requests as drafts by default |
 | `timeoutMs` | `30000` | Per-git-command deadline |
 
+`plainMode` is the older switch and is equivalent to `worktrees: false` plus
+`turnCommit: false` and `turnPush: false`. Prefer `worktrees` unless you also want
+the automatic sync off.
+
 ### Changing a setting
 
-A setting is changed by overriding this bundle's row in the profile's own patch layer,
+Override this bundle's row in the profile's patch layer,
 `~/.dsh/profiles/<name>/cordis.patch.yml`:
 
 ```yaml
 - id: dsh-git
   name: 'dsh-git'
   config:
-    autoWorktree: protected
+    worktrees: true
 ```
 
-**Only the fields you name are applied.** Every other field keeps its default, so
-the block above is a complete configuration. The row id is `dsh-git` — the same id
-the bundle's own patch inserts. Restart the Harness to load it: a plugin's row config
-is read when the plugin mounts, so an edit here is inert until then.
+Only the fields you name are applied; every other field keeps its default. The row id
+is `dsh-git`. Restart the Harness to load it — a plugin's row config is read when the
+plugin mounts.
 
-**There is no Configure page, and that is a decision rather than an omission.** One was
-built twice and shipped once. What retired it is the mechanism: the Plugins page writes a
-row's configuration into this same patch file, and a row's config is read when the plugin
-mounts — so a page cannot change a setting live, and a save rewrote the file with values
-nobody asked for (turning plain mode on left `autoWorktree: off` behind it, which then
-looked like plain mode still being on after it was turned off). A settings surface whose
-effect arrives at the next restart, and whose writes edit a file the user maintains by
-hand, is worse than the file. The settings live here, one line each.
-
-The two settings most worth changing, and the one most worth knowing how to turn off:
-
-- **`worktreeRoot`** to put worktrees somewhere other than the default. Empty —
-  the default, and what almost every deployment wants — derives the root from the
-  session's own workspace (`<session workspace>/.worktrees`), which is inside the
-  region a file sandbox permits writes to and outside every repository. Set an
-  **absolute** path to move them; a relative one resolves against the Harness home.
-  Wherever you point it, keep it outside every repository, or the worktree becomes
-  a second copy of the tree inside the repository that created it.
-- **`autoWorktree: off`** if you would rather nothing refused an edit. It defaults
-  to `protected`: an edit landing in a repository checked out on a branch in
-  `protectedBranches` is refused, and the refusal points at the `git` tool's
-  `action: "start"`. Turn it off where working on `main` is the point and a second
-  checkout is not wanted, or set `always` where isolation should hold for every
-  branch — `always` is the worktrees-for-everything mode, `protected` is not.
-
-### Running it as a plain git tool
-
-**One setting: `plainMode: true`**, then restart. It turns off the edit refusal, the automatic
-commit, the automatic push and the protected-branch rule together, so a `push` to `main`
-works with no flag, and the individual settings it covers are ignored while it is on.
-Setting those four by hand does the same thing; this exists so nobody has to find them.
-
-The guard stays, and that is the point of it: raw `git commit` in `bash` is still refused and
-redirected at the tool, so the plugin is the path rather than an option. `guardMode: off` as
-well is the one combination this bundle does not survive — bash becomes a valid way to work,
-and everything it enforces becomes advice.
-
-What is left is an ordinary git interface — `status`, `commit`, `push`, `sync`, `pr`,
-`merge` — with `guardMode` still at `redirect`, which is what keeps the tool the way
-work gets done here: raw `git commit` in `bash` is refused and redirected at the tool,
-so the plugin is still the path rather than an option. Turning `guardMode` off as well
-is the one combination this bundle does not survive: bash becomes a valid way to work,
-and everything it enforces becomes advice.
+There is no Configure page. The settings live in this file, one line each.
 
 ## Authentication
 
