@@ -25,38 +25,13 @@ no further tool call needed. A session in an unbroken burst of tool calls is sti
 committed every minute, so nothing is ever more than a minute away from a commit.
 
 The Host's own turn end — `session/event` carrying `turn/end`, and
-`agent/turn-stopping` where the deployment delivers it — is the primary hook and
-runs the same sync immediately. The timer covers the case where it does not, and
-whichever of the two runs second finds nothing to do. This is worth stating
-plainly, because the first reading of this deployment had it backwards: the
-plugin's own `boundary.log` records only the tools-layer fallback, which is not
-evidence about the other two boundaries at all. The Host's session log carries
-`turn/end` for every session.
+`agent/turn-stopping` where the deployment delivers it — runs the sync immediately.
+The timer covers the case where it does not.
 
-What *was* wrong was the fallback's timing and its message. It ran at the start of
-the next tool call, at most once a minute, so in a long turn it was the fallback
-that committed — mid-turn, up to a minute after the edits, several times over —
-and it always named the commit after a turn number it never had. Eight such
-commits landed in a single two-hour turn, and not one of them was a turn. The
-message now names what the commit contains; a turn number appears only when the
-Host really reported one.
-
-The default is `turnSyncScope: 'session'`, and that choice is about more than
-tidiness. Step 3 cannot tell whose work is whose. Once several sessions share a
-checkout — which is what an Agent Team is — "every dirty repository under the
-working directory" means the coordinator's turn end commits a teammate's
-half-finished edits under the coordinator's turn number. Nothing is lost, but the
-attribution is wrong and the commits are not the ones anybody asked for.
-
-So a repository this session never touched is left alone. It is not silently
-ignored: the turn result names what was in scope, and `status` keeps reporting
-the rest. Set `turnSyncScope: 'workspace'` for a single session working alone and
-you get the old, wider behaviour back.
-
-Within a repository the session has established as its own, everything dirty is
-committed. Narrowing that to the files the turn edited would leave one file the
-turn touched and one it did not, both uncommitted, with no later turn likely to
-notice either.
+`turnSyncScope: 'session'` (the default) commits only repositories this session
+touched. `workspace` scans for any dirty repository under the working directory —
+use it for a single session working alone. Within a repository the session has
+established as its own, everything dirty is committed.
 
 **Turn push.** The commit is then pushed, but only when the branch is one that is
 safe to push: a task branch under `branchPrefix`, or the branch of a worktree
