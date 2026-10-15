@@ -15,8 +15,10 @@
   },
   "exports": {
     ".": "./index.js",
-    "./client": "./lib/client.js",
     "./package.json": "./package.json",
+    "./client": {
+      "default": "./lib/client.js"
+    },
     "./locale/*.json": "./locale/*.json"
   },
   "icon": "./icon.svg",
