@@ -128,7 +128,7 @@ export function apply(ctx, config) {
   // the recorder decides which repositories the turn end may commit, so a path
   // that was refused must not have been recorded — otherwise the turn sync would
   // commit a repository the session never actually changed.
-  registerWorktreeGuard(ctx, resolveConfig(config), { cwdOf: (agent) => sessionCwd(ctx, agent) });
+  registerWorktreeGuard(ctx, config, { cwdOf: (agent) => sessionCwd(ctx, agent), resolveConfig });
   registerGuard(ctx, config);
   // The disposer is registered rather than dropped. The sync arms a timer for the
   // quiet period that ends a turn, and a timer that outlived the plugin would
