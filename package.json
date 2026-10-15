@@ -15,6 +15,7 @@
   },
   "exports": {
     ".": "./index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
