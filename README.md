@@ -97,10 +97,14 @@ This file is the overview. The detail lives beside it:
 
 ### Changing a setting
 
-There is **no Configure page**. One needed a client half registering into the boot
-graph, and a client half there could take the front end down — that work was built
-and then removed, deliberately. A setting is changed by overriding this bundle's
-row in the profile's own patch layer, `~/.dsh/profiles/<name>/cordis.patch.yml`:
+Two ways, and they compose. **Plugins → `dsh-git` → Configure** is the page: this
+bundle ships a browser half (`lib/client.js`) that registers into the Plugins page's
+`plugins.row.config` slot, and every field of the row's schema appears there with the
+description the schema carries. A change made there is picked up on the next tool call
+or turn boundary rather than at the next restart, because every field is `volatile()`.
+
+The other way is this bundle's row in the profile's own patch layer,
+`~/.dsh/profiles/<name>/cordis.patch.yml`:
 
 ```yaml
 - id: dsh-git
@@ -112,9 +116,20 @@ row in the profile's own patch layer, `~/.dsh/profiles/<name>/cordis.patch.yml`:
 **Only the fields you name are applied.** Every other field keeps its default, so
 the block above is a complete configuration. The row id is `dsh-git` — the same id
 the bundle's own patch inserts. Restart the Harness to load it: a plugin's row
-config is read when the plugin mounts, so an edit here is inert until then.
+config is read when the plugin mounts, so an edit here is inert until then — unlike a
+change made on the Configure page.
 
-The setting most worth changing, and the one most worth knowing how to turn off:
+A page took two attempts, and the reasons are worth keeping. The first was removed
+because a client half in the boot graph could take the front end down, and because the
+row's settings namespace is served only for fields marked `volatile()`: a field without
+it is a control that is silently *absent*, with nothing reporting why. This time the
+`volatile()` is applied to every field in one place, so a field cannot be added without
+it; the page renders an explanation instead of throwing when the Host serves it no
+namespace; and [`test/client-half.test.mjs`](test/client-half.test.mjs) runs the real
+bundle under node — registration, slot key, the write op it sends, and both states it
+cannot fix — so the browser half is covered by CI rather than by opening a browser.
+
+The two settings most worth changing, and the one most worth knowing how to turn off:
 
 - **`worktreeRoot`** to put worktrees somewhere other than the default. Empty —
   the default, and what almost every deployment wants — derives the root from the
@@ -129,6 +144,22 @@ The setting most worth changing, and the one most worth knowing how to turn off:
   `action: "start"`. Turn it off where working on `main` is the point and a second
   checkout is not wanted, or set `always` where isolation should hold for every
   branch — `always` is the worktrees-for-everything mode, `protected` is not.
+
+### Running it as a plain git tool
+
+Two settings, and the guard stays:
+
+| Setting | Value | What it changes |
+|---|---|---|
+| `autoWorktree` | `off` | an edit into a repository on `main` is allowed, and no worktree is required |
+| `turnCommit`, `turnPush` | `false` | nothing is committed or pushed unless a call asks for it |
+
+What is left is an ordinary git interface — `status`, `commit`, `push`, `sync`, `pr`,
+`merge` — with `guardMode` still at `redirect`, which is what keeps the tool the way
+work gets done here: raw `git commit` in `bash` is refused and redirected at the tool,
+so the plugin is still the path rather than an option. Turning `guardMode` off as well
+is the one combination this bundle does not survive: bash becomes a valid way to work,
+and everything it enforces becomes advice.
 
 ## Authentication
 
