@@ -79,6 +79,29 @@ Nothing here is machine-specific: `git` and the optional `gh` are the only
 external tools, authentication comes from that machine's own credential helper,
 and every path resolves against that deployment's own `$DSH_HOME`.
 
+## Authentication on a new machine
+
+Two independent credentials, and a new machine usually has only the first:
+
+- **Reading needs nothing.** `git fetch`, and so this plugin's `sync`, works on a
+  public repository with no credential at all — which is why a fresh machine looks
+  healthy right up to its first push.
+- **Writing needs that machine's own git credential.** This plugin passes `HOME`
+  and `PATH` through to git, and disables prompting (`GIT_TERMINAL_PROMPT=0`, and no
+  askpass), because a question with nobody to answer it would hang the call. So set
+  one up in a terminal before working here:
+  - HTTPS remote: `gh auth setup-git`, or a helper of your own —
+    `git config --global credential.helper osxkeychain` on macOS, `store` or
+    `cache` elsewhere.
+  - SSH remote: a key that is loaded and accepted; `ssh -T git@github.com` says so.
+- **Pull requests and merges need a GitHub token**, which is a different credential
+  and does not help a push: `gh auth login`, or `GH_TOKEN`/`GITHUB_TOKEN` in the
+  Harness's environment. `status` with `pull: true` reports a lookup that failed
+  rather than showing nothing, so a missing token is visible where a person looks.
+
+`gh auth status` shows the `gh` login. After `gh auth login` there is nothing to
+restart: a credential failure is not remembered, so the next call asks again.
+
 ## `link:` or GitHub?
 
 They fail in opposite directions, and the failure has the same symptom — "my edit

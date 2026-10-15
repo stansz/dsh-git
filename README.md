@@ -138,6 +138,16 @@ machine's own credential helper resolves credentials — on this machine that is
 `GH_TOKEN` → `GITHUB_TOKEN` → `gh auth token --hostname <host>`, read lazily,
 never logged, never written to disk, and redacted from every error.
 
+The two halves share nothing, and a fresh machine usually has only one of them:
+reading a public repository needs no credential at all, so a new machine looks
+healthy until its first push, and `GH_TOKEN` never helps a push. A push that fails
+for want of a credential is reported with the fix — the note the turn ends with and
+the record `status` prints both name `gh auth setup-git`, a credential helper, or an
+SSH remote. A *failure* is not remembered: the chain is asked again on the next
+call, so `gh auth login` in a terminal is picked up without restarting the Harness.
+[`docs/install.md`](docs/install.md#authentication-on-a-new-machine) is the
+checklist for a machine that has never logged in.
+
 GitHub is talked to over REST rather than through `gh`, because structured
 status codes beat matching error prose — and because
 [`gh pr merge --delete-branch`](https://github.com/cli/cli/issues/14537) does
