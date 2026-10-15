@@ -9,11 +9,32 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runAction } from '../lib/actions.mjs';
 import { git, makeCase } from './helpers.mjs';
+
+/**
+ * A PATH whose `git` works and whose `gh` cannot be found — whatever the machine
+ * or the CI runner happens to ship.
+ *
+ * Setting PATH to `/usr/bin:/bin` was the first version of this, and it was wrong:
+ * GitHub's ubuntu runners install `gh` at `/usr/bin/gh`, so the case measured the
+ * runner instead of the code and failed there while passing here. A directory with
+ * only symlinks to the binaries the action needs cannot leak a `gh` from anywhere.
+ */
+function pathWithoutGh(c) {
+  const bin = join(c.root, 'bin-without-gh');
+  mkdirSync(bin, { recursive: true });
+  for (const name of ['git', 'sh']) {
+    const found = String(process.env.PATH ?? '').split(':')
+      .map((dir) => join(dir, name))
+      .find((candidate) => existsSync(candidate));
+    if (found !== undefined) symlinkSync(found, join(bin, name));
+  }
+  return bin;
+}
 
 /** Point the case at a GitHub remote and take the machine's token away. */
 function credentialless(c, t, pathValue) {
@@ -41,7 +62,8 @@ function credentialless(c, t, pathValue) {
 test('B3: with no gh installed, the advice is to install it', async (t) => {
   const c = makeCase('pr-gh-missing');
   t.after(() => c.cleanup());
-  credentialless(c, t, '/usr/bin:/bin');
+  credentialless(c, t, pathWithoutGh(c));
+  assert.equal(existsSync(join(c.root, 'bin-without-gh', 'git')), true, 'the controlled PATH really holds git');
 
   const opened = await runAction('pr', { action: 'pr', repo: c.repoDir }, c.context());
   assert.equal(opened.ok, false);

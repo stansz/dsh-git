@@ -25,7 +25,16 @@ automatic half, and the local primitives the actions rest on (`deleteBranch`,
 registrations, the branch a worktree has checked out, refs in the bare origin,
 the ownership marker beside a worktree, and the plugin's own state files.
 
-Two rules the suite learned the hard way. Every case cleans its directory through a hook
+A third rule is about any variable a case changes. A case that takes the machine's
+credentials away, or takes a tool off `PATH`, is measuring the *runner* as much as the
+code, and two CI-only failures have come from exactly that: a fixture that had been
+passing on this machine's global git identity and failed on every runner, and a case that
+set `PATH=/usr/bin:/bin` to hide `gh` — which GitHub's ubuntu images install at
+`/usr/bin/gh`, so it passed here and failed there, while macOS passed either way. Control
+the variable completely (a directory of symlinks to the binaries the case really needs),
+and prove it locally by running the case with the excluded thing placed first in `PATH`.
+
+Two older rules the suite learned the hard way. Every case cleans its directory through a hook
 that awaits disposal first: a bare cleanup registered *before* the plugin's host is
 disposed deletes a directory the sync is still writing, which throws, leaves the case on
 disk, and makes the exit sweep refuse a root that is not empty — that is how scratch used
