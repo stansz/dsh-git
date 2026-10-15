@@ -65,7 +65,7 @@ This file is the overview. The detail lives beside it:
 | [`docs/guard.md`](docs/guard.md) | what raw git in `bash` is refused or asked about, and why there are no hooks |
 | [`docs/worktrees.md`](docs/worktrees.md) | the task lifecycle, ownership and path identity, and the one action that removes things |
 | [`docs/install.md`](docs/install.md) | a fresh machine, and `link:` versus GitHub installs |
-| [`docs/testing.md`](docs/testing.md) | running the suite, its fixtures, and what CI does with it |
+| [`docs/testing.md`](docs/testing.md) | the tests: what the three that matter are, and why the old suite is gone |
 
 ## Settings
 
