@@ -7,24 +7,17 @@ there.
 
 ## Forcing a worktree
 
-Everything the guard does *asks*. `autoWorktree` is the only setting that **refuses**, and
-it exists because the moment that decides where work lands is a file edit — a
-model that reads "work in a worktree" and then edits `main` has followed the
-instruction as far as it understood it.
+`autoWorktree` is the setting that **refuses** an edit rather than asking.
 
 | Mode | An edit is refused when |
 |---|---|
-| `protected` *(default)* | the target repository is checked out on a branch named in `protectedBranches` (default `main`, `master`) and the edit is not already inside this session's worktree |
-| `off` | never — the tool description and the git guard are the whole story |
+| `protected` | the target repository is checked out on a branch named in `protectedBranches` and the edit is not already inside this session's worktree |
+| `off` *(default)* | never — the tool description and the git guard are the whole story |
 | `always` | the target repository has no worktree for this session, on any branch |
 
-`protected` leads because everything else here only *asks*: the description says to
-work in a worktree, the git guard redirects raw git at the tool, the turn sync keeps
-what happened committed — and none of that changes the moment that decides where the
-work lands. A rule that has to be switched on is the failure this bundle exists to end.
-The cost is one refused edit and the `start` call the refusal names. Set `off` where
-work on `main` is the point — a solo repository, a config fix, a machine where a second
-checkout is expensive — and `always` where isolation should hold on every branch.
+The `worktrees: true` switch sets `protected` and a `[main, master]` protected list
+together. Set `off` where work on `main` is the point, and `always` where isolation
+should hold on every branch.
 
 **"Protected" here is this plugin's own list, not GitHub's.** `protectedBranches` is
 matched literally against the checked-out branch name, locally; no server-side branch
