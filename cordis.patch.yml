@@ -12,11 +12,12 @@
 # base row's config has to be restated. Delete this entry to remove every
 # contribution at once.
 #
-# Nothing here needs a config block: every field has a default. Configure it by
-# overriding this row in the profile's own patch layer, which survives Harness
-# upgrades. There is no Configure page in this version: one needs a client half,
-# and this bundle has none, because a client half in the boot graph could take
-# the front end down.
+# Nothing here needs a config block: every field has a default. Two ways to change
+# one: the Configure page this bundle's browser half ships (Plugins -> dsh-git ->
+# Configure), or overriding this row in the profile's own patch layer, which survives
+# Harness upgrades and is read when the plugin mounts. The page writes through the
+# settings namespace the row's Config schema serves, and every field is volatile(),
+# which is what lets a saved change reach the next call instead of the next restart.
 - insert:
     - id: dsh-git
       name: 'dsh-git'

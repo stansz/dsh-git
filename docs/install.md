@@ -68,12 +68,12 @@ entry together and is what to prefer when it is available. The row inside the
 package needs no editing: it names `dsh-git`, which resolves from the profile's
 `node_modules` once the dependency is installed.
 
-Finally, set that machine's guard mode and worktree root by overriding this
-bundle's row in the profile's own patch layer — the same place every other row is
-configured. There is no Configure page in this version, and no client half: that
-work was built and then removed, because a client half in the boot graph could
-take the front end down. Until the row is overridden, every setting keeps its
-default.
+Finally, set that machine's guard mode and worktree root. Two ways, and they compose:
+**Plugins → `dsh-git` → Configure** — the page this bundle's browser half ships, where
+a saved change reaches the next tool call — or by overriding this bundle's row in the
+profile's own patch layer, the same place every other row is configured, which is read
+when the plugin mounts and therefore needs a restart. Until one of them is used, every
+setting keeps its default.
 
 Nothing here is machine-specific: `git` and the optional `gh` are the only
 external tools, authentication comes from that machine's own credential helper,
