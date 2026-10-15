@@ -109,7 +109,20 @@ Run the git tool with action "status" to see the current state, and action "comm
 Work written through `bash` is the case this exists for: the recorder only sees the file
 tools, so a repository changed that way and never touched again is exactly the one the
 sync has to mention rather than quietly skip.
+
+A push that failed is reported the same way, with git's own words and — when a
+credential is what was missing — the sentence that says what to do about it. The
+same text is what `status` prints for the automatic push, because it is written
+into the failure record rather than added when it is displayed:
+
 ```
+dsh-git could not finish syncing your working tree:
+  - app: push failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled — git could not authenticate to the remote: this machine has no working credential for it. Run `gh auth setup-git` to let the gh CLI provide one, set a credential helper (on macOS that is `git config --global credential.helper osxkeychain`), or use an SSH remote. (attempt 1)
+```
+
+Only the credential-shaped failures get the extra sentence — `could not read
+Username`, `Authentication failed`, `Permission denied (publickey)` — and a network
+failure is passed through exactly as git wrote it.
 
 Reaching the model takes two steps, and both are deliberate: `agent.inject()`
 puts the text in its context, but does **not** wake it, so `agent.followup()` then
