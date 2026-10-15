@@ -36,6 +36,8 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
-    "client": "./lib/client.js"
+    "client": {
+      "platform": "web"
+    }
   }
 }
