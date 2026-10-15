@@ -9,6 +9,27 @@ Raw `git` in `bash` is classified three ways. Detection is **best-effort, not a
 security boundary** — an obfuscated command can still get through, and that is
 documented in `lib/guard.mjs` rather than papered over.
 
+The guard grades **`git`**. It collects the `git` invocations in a shell command and
+decides on those; any other program that can do the same work is outside it, by
+construction rather than by oversight. Measured against this module's own classifier:
+
+| Command | Verdict |
+|---|---|
+| `git push origin main`, `git push origin dsh/task`, `git commit -am "x"`, `git fetch --prune origin`, `git config credential.helper …`, `git remote add origin …` | deny |
+| `git init -b main .` | ask |
+| `git status` | allow |
+| `gh pr merge 12 --merge --delete-branch`, `gh repo delete owner/repo --yes`, `gh api -X DELETE …/git/refs/heads/main`, `gh pr create --fill`, `bash -c 'gh repo delete …'` | **allow** |
+| `curl -X DELETE -H 'Authorization: …' https://api.github.com/…`, `node -e "fetch(…)"` | **allow** |
+
+An agent that reaches for `gh` can therefore merge a pull request without the tip
+proof, delete a remote branch, or move `refs/heads/main` — the three things the `git`
+tool's rules exist for — and it needs no `guardMode` setting to do it. That is worth
+knowing before reading the table below as a boundary: this raises the cost of doing
+those things *by accident through `git`*, which is the failure it was written for. A
+boundary belongs to the Harness's own permission and sandbox policy, and closing this
+half here would mean a table of `gh` subcommands — friction and visibility, not a
+boundary either, because `curl` and `node` reach the same API.
+
 | Class | Decision |
 |---|---|
 | read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow. A plain `fetch` reads; `--prune`, `--all`, `--tags`, a force flag or a refspec with a destination *writes refs* and is gated like a mutation |
