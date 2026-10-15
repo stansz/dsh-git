@@ -14,13 +14,23 @@ instruction as far as it understood it.
 
 | Mode | An edit is refused when |
 |---|---|
-| `off` *(default)* | never — the tool description and the git guard are the whole story |
-| `protected` | the target repository is on a protected branch and the edit is not already inside this session's worktree |
+| `protected` *(default)* | the target repository is on a protected branch and the edit is not already inside this session's worktree |
+| `off` | never — the tool description and the git guard are the whole story |
 | `always` | the target repository has no worktree for this session, on any branch |
 
-Turn it on when you want isolation to be structural rather than advisory. Leave it
-off while you are still forming the habit — a rule that fires before you expect it
-is a rule you route around.
+`protected` leads because everything else here only *asks*: the description says to
+work in a worktree, the git guard redirects raw git at the tool, the turn sync keeps
+what happened committed — and none of that changes the moment that decides where the
+work lands. A rule that has to be switched on is the failure this bundle exists to end.
+The cost is one refused edit and the `start` call the refusal names. Set `off` where
+work on `main` is the point — a solo repository, a config fix, a machine where a second
+checkout is expensive — and `always` where isolation should hold on every branch.
+
+**A branch with no commits is never protected.** `git init -b main` reports the name
+`main` before `main` exists; treating that as protected refused the first file of every
+new project, with advice that could not run, because no worktree can be cut from an
+unborn HEAD. There is nothing to protect either: no history, and nothing another
+session could be sharing.
 
 **What it does not do:** create the worktree for you. It refuses and names
 `action "start"`. A guard that created one as a side effect would leave a worktree
@@ -186,9 +196,9 @@ A full path always works, and a directory name works when exactly one worktree h
 an ambiguous name removes neither, and names both candidates, because removing the wrong
 one is worse than a refusal. A dirty worktree is refused and its files
 are named; the main checkout is never touched; and the branch the removal frees
-is removed with it when it holds no commit of its own. Set `autoWorktree` to
-`protected` or `always` and this is the closing move that keeps the isolation
-from turning into a directory per abandoned task. A branch counts as this plugin's own
+is removed with it when it holds no commit of its own. With `protected` (the
+default) or `always`, this is the closing move that keeps the isolation from
+turning into a directory per abandoned task. A branch counts as this plugin's own
 only when `branchPrefix` ends at a separator - the rule governs the whole namespace, not
 just removals: the automatic push decision, the prune sweep and the remote-branch cleanup
 all apply it - so a prefix `task` never claims a user branch named `taskforce`. When a removal
