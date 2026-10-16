@@ -30,8 +30,8 @@ last two are the ones that fix it:
 
 ## The git tool
 
-One tool, nine actions. The model sees the full description of each; this is the shape of
-them.
+One tool, fifteen actions. The model sees the full description of each; this is the shape
+of them.
 
 - **`clone`** — clone a repository from a URL. `path` is where it lands, `branch`
   checks out a branch at clone time. Returns the state of the clone.
