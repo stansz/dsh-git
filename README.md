@@ -23,7 +23,7 @@ last two are the ones that fix it:
 
 | Contribution | What it is |
 |---|---|
-| `ctx.tools.register()` | the `git` tool: `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish`, `prune` |
+| `ctx.tools.register()` | the `git` tool: `clone`, `init`, `fetch`, `branch`, `checkout`, `stash`, `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish`, `prune` |
 | `ctx.commands.register()` | `/git`, printing the same state to a human |
 | `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
 | `ctx.on('agent/turn-stopping')`, `ctx.on('session/event')`, `ctx.on('tools/pre-execute')` | the automatic sync: at a turn boundary, or a few seconds after a turn's edits stop when no boundary arrives, commit the touched repositories and push what is safe to push |
