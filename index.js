@@ -10,8 +10,9 @@
  * So this bundle contributes four things, and the last two are the ones that
  * matter:
  *
- *   ctx.tools.register()            the `git` tool: status, start, commit,
- *                                   push, sync, pr, merge, finish
+ *   ctx.tools.register()            the `git` tool: clone, init, fetch, branch,
+ *                                   checkout, stash, status, start, commit,
+ *                                   push, sync, pr, merge, finish, prune
  *   ctx.commands.register()         /git, printing the same state to a human
  *   ctx.on('tools/pre-execute')     a guard that redirects raw mutating git
  *                                   in bash at the tool that does it cleanly,
