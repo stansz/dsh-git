@@ -2,7 +2,7 @@
   "name": "dsh-git",
   "version": "0.2.0",
   "private": true,
-  "description": "One clean git and GitHub surface for DSH: status, per-task worktrees, commit, push, sync, pull requests, and enforcement that stops raw git in bash from leaving dirty trees and unpushed commits behind.",
+  "description": "A consistent way to use git and GitHub from DSH. Commits and pushes each turn's work automatically, and redirects raw git in bash at the tool that does it cleanly — so nothing is left uncommitted or unsynced.",
   "license": "MIT",
   "repository": {
     "type": "git",
