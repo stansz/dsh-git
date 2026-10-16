@@ -1,95 +1,100 @@
 # The guard
 
-What raw git in `bash` is refused, redirected or asked about; the overrides that
-would let a read run a program of the caller's choosing; and why this deployment
-has no git hooks. Part of [dsh-git](../README.md) — the overview, the settings and
-the requirements are there.
+What raw git in `bash` is refused; everything else that mentions git; and why this
+deployment has no git hooks. Part of [dsh-git](../README.md) — the overview, the
+settings and the requirements are there.
 
-Raw `git` in `bash` is classified three ways. Detection is **best-effort, not a
-security boundary** — an obfuscated command can still get through, and that is
-documented in `lib/guard.mjs` rather than papered over.
+The guard has **one rule**: refuse the commands that discard work or rewrite shared
+history. Everything else runs. Raw git used to be denied wholesale — `git push`,
+`git pull`, `git commit`, `git config`, `git remote`, `git rebase` and
+`git clone` were all gated and redirected at the `git` tool — and that made the
+plugin the obstacle whenever a remote, a credential or a diverged branch had to be
+fixed: the commands that repair those were the ones being refused. It is not a
+security boundary and never was (`gh`, `curl` and `node` reach the same API),
+so it no longer pretends to be one.
 
-The guard grades **`git`**. It collects the `git` invocations in a shell command and
-decides on those; any other program that can do the same work is outside it, by
-construction rather than by oversight. Measured against this module's own classifier:
+Detection is **best-effort, not a security boundary** — an obfuscated command can
+still get through, and that is documented in `lib/guard.mjs` rather than papered
+over. The guard grades **`git`** only.
 
 | Command | Verdict |
 |---|---|
-| `git push origin main`, `git push origin dsh/task`, `git commit -am "x"`, `git fetch --prune origin`, `git config credential.helper …`, `git remote add origin …` | deny |
-| `git init -b main .` | ask |
-| `git status` | allow |
-| `gh pr merge 12 --merge --delete-branch`, `gh repo delete owner/repo --yes`, `gh api -X DELETE …/git/refs/heads/main`, `gh pr create --fill`, `bash -c 'gh repo delete …'` | **allow** |
-| `curl -X DELETE -H 'Authorization: …' https://api.github.com/…`, `node -e "fetch(…)"` | **allow** |
-
-An agent that reaches for `gh` can therefore merge a pull request without the tip
-proof, delete a remote branch, or move `refs/heads/main` — the three things the `git`
-tool's rules exist for — and it needs no `guardMode` setting to do it. That is worth
-knowing before reading the table below as a boundary: this raises the cost of doing
-those things *by accident through `git`*, which is the failure it was written for. A
-boundary belongs to the Harness's own permission and sandbox policy, and closing this
-half here would mean a table of `gh` subcommands — friction and visibility, not a
-boundary either, because `curl` and `node` reach the same API.
+| `git status`, `git log`, `git --version`, `git remote -v`, `git config --get …` | allow |
+| `git fetch --prune origin`, `git pull`, `git push`, `git push -u origin dsh/task` | allow |
+| `git commit -am "x"`, `git add -A`, `git checkout -b task/x`, `git switch -c task/x` | allow |
+| `git rebase origin/main`, `git merge origin/main`, `git cherry-pick`, `git revert` | allow |
+| `git clone <url>`, `git init`, `git tag v1.0`, `git branch -d old` | allow |
+| `git config credential.helper osxkeychain`, `git remote set-url origin …` | allow |
+| `git reset --hard`, `git clean -fd`, `git push --force`, `git branch -D` | deny |
+| `git checkout -- <paths>`, `git restore <paths>`, `git stash drop` | deny |
+| `git push --force`, `git filter-branch`, `git update-ref`, `git tag -f` | deny |
 
 | Class | Decision |
 |---|---|
-| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`) | allow |
-| mutating (`init`, `clone`, `commit`, `add`, `push`, `pull`, `fetch`, `merge`, `checkout`, `switch`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
-| destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
+| read-only | allow |
+| ordinary write (`init`, `clone`, `commit`, `add`, `push`, `pull`, `fetch`, `merge`, `rebase`, `checkout`, `switch`, `stash`, `branch`, `tag`, `config`, `remote`, …) | allow |
+| destructive (the list below) | deny |
 
-The class is decided from a parsed command line, not from the text of its tokens. A
-value belongs to its option whatever it looks like, `--` ends the options, and the
-verb is the first operand: `git clean -fenodeModules -d` is a forced clean and not a
-dry run, `git tag -m '--delete' v1` creates a tag whose *message* is `--delete`, and
-`git push -o -f origin main` is a push to a protected branch rather than a force
-push, because git consumed `-f` as the value of `-o`. The same parse is why
-`git worktree add -b list ../wt` and `git stash push -m list` are the mutations they
-are, and why a read form does not become a mutation because a value happens to spell
-one.
+## What is refused
 
-A mutating subcommand the tool has no action for is denied too, rather than waved
-through because no action replaces it: `git config --add core.hooksPath …`,
-`git remote set-url`, `git reflog delete`, `git tag v1.0`, `git gc`,
-`git repack`, `git maintenance run`, `git submodule add`,
-`git sparse-checkout set`, `git notes remove`, `git lfs push`,
-`git send-email`, `git format-patch`. Each reason says so plainly — the tool cannot
-make that change for you, and `guardMode` (`warn` or `off`) is the deliberate escape
-hatch. The read forms stay allowed: `git tag -l`, `git remote -v`,
-`git config --get`, `git reflog`, `git submodule status`,
-`git sparse-checkout list`. `git config` writing `core.hooksPath` is the sharpest of
-them: hooks run on the *next* git command, so what would be executing is somebody
-else's program, with the guard watching the wrong process.
+Only a form that overwrites uncommitted work, deletes untracked work, or rewrites
+history other clones are built on:
 
-A read can still be *told to run something*, and that is asked about rather than allowed:
-an environment prefix naming `GIT_PAGER`, `PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`,
-`GIT_EDITOR` and their siblings; a global `-c` or `--config-env` whose config **key**
-carries a program (`core.pager`, `core.hooksPath`, `diff.external`, `alias.*`, …); or
-`--exec-path`/`--upload-pack`. The reason names the mechanism — "the program in
-`GIT_PAGER`" — rather than the wrapper text, which would be false: nothing is wrapped.
-An override can never downgrade a refusal, so the same flag on a mutation still denies.
-`PAGER`, the generic variable, is treated exactly like `GIT_PAGER`: it is the last link in
-git's pager chain, so a read that sets it can be telling git to run a program. `PAGER=cat`
-is a habit, and the habit has a free replacement — `git --no-pager <command>` is the same
-read, is already allowed, and the pager reasons say so. The cost is real and paid
-deliberately: `PAGER=cat git log` now asks, like the `GIT_PAGER` spelling always has.
+- `git reset --hard`, `git reset --merge`, `git reset --keep`. `--soft`,
+  `--mixed` and a path-scoped reset leave the files alone and run.
+- `git clean` without `-n`/`--dry-run`. `git clean -n` prints and runs.
+- `git push --force`, `--force-with-lease`, `-f`, a `+refspec`, `--delete`,
+  `--mirror`. A rejected push is not a dead end: `git fetch origin`, `git rebase
+  origin/<branch>` and `git push` are all allowed, and that is the recovery the
+  reasons name.
+- `git branch -D` (force delete). `git branch -d` runs, because git itself
+  refuses to delete an unmerged branch.
+- `git tag -f` (re-point an existing tag). Creating a tag and `git tag -d` run.
+- `git checkout -- <paths>` and `git switch -- <paths>`; `git restore`, except
+  `git restore --staged`, which only unstages.
+- `git stash drop`, `git stash clear`; `git stash`, `pop`, `list` run.
+- history rewrites: `git filter-branch`, `git filter-repo`, `git update-ref`,
+  `git symbolic-ref` writes, `git replace` (other than `-l`), `git reflog expire`,
+  `git reset-index`, `git checkout-index`.
+- `git worktree remove --force`, `git submodule deinit --force`,
+  `git gc --prune=now`, `git prune`.
 
-A dry run reads whatever else it names — `git push --dry-run origin main`, `-n`,
-`--force --dry-run` — because nothing is sent. Git's last-flag-wins applies, so
+Each refusal says what is lost, not just "no", and names the ordinary way through
+where one exists.
+
+## Overrides and dry runs
+
+A read may still be *told to run something*: an environment prefix naming `GIT_PAGER`,
+`PAGER`, `GIT_EXTERNAL_DIFF`, `GIT_SSH_COMMAND`, `GIT_EDITOR` and their
+siblings; a global `-c` or `--config-env` whose config **key** carries a program
+(`core.pager`, `core.hooksPath`, `diff.external`, `alias.*`, `credential.helper`, …);
+or `--exec-path`/`--upload-pack`. These are **allowed**, deliberately: `credential.helper`
+and the pager live in exactly this syntax, so refusing the syntax refuses normal setup.
+An override never downgrades a refusal — the same flag on a destructive command still
+denies. The guard is honest about the consequence: a program git is told to run is not
+something this module inspects.
+
+A dry run sends nothing and runs — `git push --dry-run origin main`, `-n`,
+`git clean -n`, `git gc --dry-run`. Git's last-flag-wins applies, so
 `git push --dry-run --no-dry-run` really pushes and is denied.
 
-`deny` outranks `ask` anywhere in one command line, so `git status && git reset
---hard` is refused whole. `ask` is what is left for a subcommand the guard cannot
-classify: refusing an operation nobody understands would block work for no stated
-reason.
+## Wrappers
 
-That last verdict is the only one that needs a person, so `guardAsk` decides what
-happens when there is nobody to ask. The default, `ask`, waits for an answer —
-right when somebody is watching, and a stalled turn when nobody is. `deny`
-refuses the command with the reason attached, so an unattended session fails fast
-and learns which action to call instead. `allow` accepts it.
+Git hidden inside `xargs`, `sh -c`, `zsh -c`, `eval`, `env`, `find -exec`, or a
+git-adjacent program such as `gitk` cannot be classified. If the inner text **peeked**
+a command that discards work, the whole line is refused — that is the one denial worth
+keeping reachable through a wrapper. Otherwise it runs, because refusing a command whose
+effect cannot be read blocks work nobody can explain.
+
+`guardAsk` decides that single case: `deny` and `ask` both refuse it, `allow`
+accepts even that.
+
+## Modes
 
 `guardMode: off` disables the guard entirely; `warn` classifies and then allows
-everything, which makes it a diagnostic for seeing what a session reaches for —
-not a safer setting, because it drops the destructive denials with the rest.
+everything, which makes it a diagnostic for seeing what a session reaches for — not a
+safer setting, because it drops the destructive denials with the rest. `redirect`
+is the default and the policy above.
 
 ## Git hooks
 
