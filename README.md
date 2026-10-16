@@ -33,6 +33,8 @@ last two are the ones that fix it:
 One tool, nine actions. The model sees the full description of each; this is the shape of
 them.
 
+- **`clone`** — clone a repository from a URL. `path` is where it lands, `branch`
+  checks out a branch at clone time. Returns the state of the clone.
 - **`status`** — the state of a repository, or of every repository under a directory:
   branch, ahead/behind, changed paths, worktrees, any open pull request. Reads only.
 - **`start`** — create the worktree for this task (branch `<prefix><slug>`, cut from
