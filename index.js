@@ -52,7 +52,7 @@ export const inject = ['tools', 'commands', 'sessions'];
 export const Config = buildConfig();
 
 /** The command-line tokens `/git` understands, mapped to the tool's arguments. */
-const COMMAND_ACTIONS = new Set(['status', 'start', 'commit', 'push', 'sync', 'pr', 'merge', 'finish', 'prune']);
+const COMMAND_ACTIONS = new Set(['clone', 'init', 'fetch', 'branch', 'checkout', 'stash', 'status', 'start', 'commit', 'push', 'sync', 'pr', 'merge', 'finish', 'prune']);
 
 /**
  * Turn `/git <tokens>` into tool arguments.
