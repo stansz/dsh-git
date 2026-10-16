@@ -23,14 +23,14 @@ last two are the ones that fix it:
 
 | Contribution | What it is |
 |---|---|
-| `ctx.tools.register()` | the `git` tool: `clone`, `init`, `fetch`, `branch`, `checkout`, `stash`, `status`, `start`, `commit`, `push`, `sync`, `pr`, `merge`, `finish`, `prune` |
+| `ctx.tools.register()` | the `git` tool: `clone`, `init`, `fetch`, `branch`, `checkout`, `stash`, `remote`, `tag`, `status`, `start`, `commit`, `push`, `sync`, `rebase`, `pr`, `merge`, `finish`, `prune` |
 | `ctx.commands.register()` | `/git`, printing the same state to a human |
 | `ctx.on('tools/pre-execute')` | a guard that refuses the raw `git` commands that discard work — `reset --hard`, `clean`, a force push, a history rewrite — and allows every read and ordinary write, so normal git and GitHub work still runs |
 | `ctx.on('agent/turn-stopping')`, `ctx.on('session/event')`, `ctx.on('tools/pre-execute')` | the automatic sync: at a turn boundary, or a few seconds after a turn's edits stop when no boundary arrives, commit the touched repositories and push what is safe to push |
 
 ## The git tool
 
-One tool, fifteen actions. The model sees the full description of each; this is the shape
+One tool, eighteen actions. The model sees the full description of each; this is the shape
 of them.
 
 - **`clone`** — clone a repository from a URL. `path` is where it lands, `branch`
@@ -44,6 +44,11 @@ of them.
   Refuses to switch away from uncommitted work.
 - **`stash`** — shelve work in progress. `pop: true` restores it, `list: true` shows
   the stack.
+- **`remote`** — list, add, repoint, or remove a remote. `name` + `url` adds one;
+  `setUrl: true` repoints an existing one; `delete: true` removes it with `apply: true`.
+- **`tag`** — list, create, or delete tags. `name` creates one, `message` makes it
+  annotated, `base` puts it at a commit; `delete: true` removes it with `apply: true`,
+  and `push: true` publishes the tag or its deletion to origin.
 - **`status`** — the state of a repository, or of every repository under a directory:
   branch, ahead/behind, changed paths, worktrees, any open pull request. Reads only.
 - **`start`** — create the worktree for this task (branch `<prefix><slug>`, cut from
@@ -53,7 +58,11 @@ of them.
 - **`push`** — push the current branch. Refuses a protected branch unless
   `allowProtected` is true.
 - **`sync`** — fetch origin, then fast-forward only: the branch onto its base when it is
-  behind and has no commits of its own, or the base branch itself. Never merges or rebases.
+  behind and has no commits of its own, or the base branch itself. Never merges or rebases;
+  use `rebase` when the branch has diverged.
+- **`rebase`** — fetch origin, then replay this branch onto `origin/<base>` (or the `base`
+  you name — name this branch itself to recover one the remote rejected as non-fast-forward).
+  A conflict aborts the rebase and reports the paths, leaving the branch exactly where it was.
 - **`pr`** — open a pull request, or return the one already open for this branch. Never
   opens a second one.
 - **`merge`** — merge a pull request by number, or the one open for the current branch,
