@@ -32,8 +32,8 @@ boundary either, because `curl` and `node` reach the same API.
 
 | Class | Decision |
 |---|---|
-| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`, `fetch`) | allow. A plain `fetch` reads; `--prune`, `--all`, `--tags`, a force flag or a refspec with a destination *writes refs* and is gated like a mutation |
-| mutating (`commit`, `add`, `push`, `pull`, `merge`, `checkout`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
+| read-only (`status`, `diff`, `log`, `rev-list`, `diff-tree`, `branch -l`, `tag -l`, `remote -v`, `clean -n`, `worktree list`) | allow |
+| mutating (`init`, `clone`, `commit`, `add`, `push`, `pull`, `fetch`, `merge`, `checkout`, `switch`, `stash`, `branch <name>`, …) | deny, with a reason naming the action to use instead |
 | destructive (`reset`, `clean` without `-n`, `push --force`, `branch -D`, `filter-branch`, `worktree remove --force`, `reflog expire`, …) | deny |
 
 The class is decided from a parsed command line, not from the text of its tokens. A
