@@ -147,14 +147,11 @@ Nothing breaks if you skip that step either, because of `turnSyncScope: 'session
 — a teammate's uncommitted work in the shared checkout is simply not committed by
 anyone else, and `status` reports it until its owner commits it.
 
-**The guard refuses only git in `bash` that discards work.** A team hits that
-rarely now: `fetch`, `pull`, `push`, `commit`, `rebase`, `config` and `remote` all
-run, so a session can repair its own remote, credential or diverged branch without
-a prompt and without the tool needing an action for it. What is still refused
-names the loss and, where one exists, the ordinary way through.
-`guardMode: 'warn'` classifies and allows instead, which is useful for seeing what
-sessions reach for — but it drops the destructive denials too, so it is a
-diagnostic, not a team setting.
+**The guard refuses mutating git in `bash`.** A team hits that often, and the
+answer is the tool rather than a prompt: every refusal names the action that does
+the same job. `guardMode: 'warn'` classifies and allows instead, which is useful
+for seeing what sessions reach for — but it drops the destructive denials too, so
+it is a diagnostic, not a team setting.
 
 **Session state is written under a lock, one sync runs at a time.** Two OS processes
 writing one session file used to lose records — an entire process's worth in the measured

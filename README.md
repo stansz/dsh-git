@@ -25,7 +25,7 @@ last two are the ones that fix it:
 |---|---|
 | `ctx.tools.register()` | the `git` tool: `clone`, `init`, `fetch`, `branch`, `checkout`, `stash`, `remote`, `tag`, `status`, `start`, `commit`, `push`, `sync`, `rebase`, `pr`, `merge`, `finish`, `prune` |
 | `ctx.commands.register()` | `/git`, printing the same state to a human |
-| `ctx.on('tools/pre-execute')` | a guard that refuses the raw `git` commands that discard work — `reset --hard`, `clean`, a force push, a history rewrite — and allows every read and ordinary write, so normal git and GitHub work still runs |
+| `ctx.on('tools/pre-execute')` | a guard that redirects raw mutating git in `bash` at the tool that does it cleanly, and refuses the commands that discard work |
 | `ctx.on('agent/turn-stopping')`, `ctx.on('session/event')`, `ctx.on('tools/pre-execute')` | the automatic sync: at a turn boundary, or a few seconds after a turn's edits stop when no boundary arrives, commit the touched repositories and push what is safe to push |
 
 ## The git tool
@@ -82,7 +82,7 @@ This file is the overview. The detail lives beside it:
 | File | What is in it |
 |---|---|
 | [`docs/turn-sync.md`](docs/turn-sync.md) | the automatic half: what is committed and pushed, when it declines, and how to watch it |
-| [`docs/guard.md`](docs/guard.md) | what raw git in `bash` is refused (only what discards work), and why there are no hooks |
+| [`docs/guard.md`](docs/guard.md) | what raw git in `bash` is refused or asked about, and why there are no hooks |
 | [`docs/worktrees.md`](docs/worktrees.md) | the task lifecycle, ownership and path identity, and the one action that removes things |
 | [`docs/install.md`](docs/install.md) | a fresh machine, and `link:` versus GitHub installs |
 | [`docs/testing.md`](docs/testing.md) | the tests: what the three that matter are, and why the old suite is gone |
@@ -101,8 +101,8 @@ and rarely needs touching.
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
 | `protectedBranches` | `[]` | The plugin's own list of branch names, matched literally against the checked-out branch. Never pushed automatically, and `autoWorktree` refuses an edit landing on one. An explicit `[]` lets a `push` to `main` through without `allowProtected`. `worktrees: true` sets this to `[main, master]` |
 | `autoWorktree` | `off` | `off` never refuses an edit. `protected` refuses one landing on a protected branch. `always` refuses one landing outside a worktree. `worktrees: true` sets `protected` |
-| `guardMode` | `redirect` | `off` \| `warn` \| `redirect`. `redirect` refuses only the commands that discard work; an ordinary read or write runs |
-| `guardAsk` | `ask` | What to do with a command that discards work but is hidden in a wrapper (`xargs git push --force`): `ask` \| `deny` \| `allow`. Unclassifiable git that does not peek a destructive command is allowed |
+| `guardMode` | `redirect` | `off` \| `warn` \| `redirect` |
+| `guardAsk` | `ask` | What to do with a command the guard cannot classify: `ask` \| `deny` \| `allow` |
 | `guardTools` | `[bash, pwsh]` | Which tools the guard inspects |
 | `turnCommit` | `true` | Commit each turn's changes |
 | `turnCommitMessage` | *(empty)* | Empty generates `dsh: turn <N> — <paths>`, or `dsh: <paths>` with no turn number. `{turn}` and `{paths}` are substituted |
