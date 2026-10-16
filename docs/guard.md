@@ -4,14 +4,26 @@ What raw git in `bash` is refused; everything else that mentions git; and why th
 deployment has no git hooks. Part of [dsh-git](../README.md) — the overview, the
 settings and the requirements are there.
 
-The guard has **one rule**: refuse the commands that discard work or rewrite shared
-history. Everything else runs. Raw git used to be denied wholesale — `git push`,
-`git pull`, `git commit`, `git config`, `git remote`, `git rebase` and
-`git clone` were all gated and redirected at the `git` tool — and that made the
-plugin the obstacle whenever a remote, a credential or a diverged branch had to be
-fixed: the commands that repair those were the ones being refused. It is not a
-security boundary and never was (`gh`, `curl` and `node` reach the same API),
-so it no longer pretends to be one.
+The guard has **two rules**, and the first is the one the plugin exists for:
+
+1. **The everyday flow goes through the tool.** `git add`, `commit`, `push`, `pull`,
+   `fetch` and `rebase` in `bash` are refused, each naming the action that does the
+   same job — `save`, `publish`, `sync` (`sync` with `rebase: true` for a replay).
+   That is what makes the same work happen the same way every turn, instead of a
+   fresh incantation each time.
+2. **Work is never discarded.** `reset --hard`, `clean`, a force push, `branch -D`,
+   `checkout -- <paths>`, `stash drop` and the history rewrites are refused.
+
+Everything else runs. Setup and maintenance — `config`, `remote`, `tag`, `stash`,
+`branch`, `worktree`, `gc`, `submodule`, `lfs` — are deliberately **not** gated: they
+are not the daily flow, and denying them is how a guard becomes a wall.
+`git config credential.helper` is the repair path for a machine that cannot push,
+and it has no tool action to point at.
+
+The guard sees **the agent's tool calls only** — it is a `tools/pre-execute` listener
+on `bash` (and `pwsh`), so your own terminal is never affected by it. It is not a
+security boundary and never was (`gh`, `curl` and `node` reach the same API), so it
+does not pretend to be one.
 
 Detection is **best-effort, not a security boundary** — an obfuscated command can
 still get through, and that is documented in `lib/guard.mjs` rather than papered
@@ -19,20 +31,19 @@ over. The guard grades **`git`** only.
 
 | Command | Verdict |
 |---|---|
-| `git status`, `git log`, `git --version`, `git remote -v`, `git config --get …` | allow |
-| `git fetch --prune origin`, `git pull`, `git push`, `git push -u origin dsh/task` | allow |
-| `git commit -am "x"`, `git add -A`, `git checkout -b task/x`, `git switch -c task/x` | allow |
-| `git rebase origin/main`, `git merge origin/main`, `git cherry-pick`, `git revert` | allow |
-| `git clone <url>`, `git init`, `git tag v1.0`, `git branch -d old` | allow |
-| `git config credential.helper osxkeychain`, `git remote set-url origin …` | allow |
+| `git status`, `git log`, `git --version`, `git remote -v`, `git diff` | allow |
+| `git add -A`, `git commit -m "x"`, `git push`, `git push -u origin task/x` | deny → `save`, `publish` |
+| `git pull`, `git fetch --prune origin`, `git rebase origin/main` | deny → `sync` (`rebase: true` to replay) |
+| `git config credential.helper …`, `git remote set-url …`, `git tag v1.0`, `git stash`, `git checkout -b x` | allow |
 | `git reset --hard`, `git clean -fd`, `git push --force`, `git branch -D` | deny |
 | `git checkout -- <paths>`, `git restore <paths>`, `git stash drop` | deny |
-| `git push --force`, `git filter-branch`, `git update-ref`, `git tag -f` | deny |
+| `git filter-branch`, `git update-ref`, `git tag -f` | deny |
 
 | Class | Decision |
 |---|---|
 | read-only | allow |
-| ordinary write (`init`, `clone`, `commit`, `add`, `push`, `pull`, `fetch`, `merge`, `rebase`, `checkout`, `switch`, `stash`, `branch`, `tag`, `config`, `remote`, …) | allow |
+| the everyday flow (`add`, `commit`, `push`, `pull`, `fetch`, `rebase`) | deny, naming `save`, `publish` or `sync` |
+| every other write (`config`, `remote`, `tag`, `stash`, `branch`, `checkout`, `merge`, `clone`, `worktree`, …) | allow |
 | destructive (the list below) | deny |
 
 ## What is refused
