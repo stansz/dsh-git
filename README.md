@@ -35,6 +35,15 @@ them.
 
 - **`clone`** — clone a repository from a URL. `path` is where it lands, `branch`
   checks out a branch at clone time. Returns the state of the clone.
+- **`init`** — create a new empty repository. `path` is where it lands, `branch`
+  names the initial branch.
+- **`fetch`** — fetch from the remote without merging. `remote` defaults to `origin`.
+- **`branch`** — list, create, or delete branches. With `name` and `delete: true`,
+  removes one (pass `apply: true` to actually delete).
+- **`checkout`** — switch to a branch. `create: true` makes it if it does not exist.
+  Refuses to switch away from uncommitted work.
+- **`stash`** — shelve work in progress. `pop: true` restores it, `list: true` shows
+  the stack.
 - **`status`** — the state of a repository, or of every repository under a directory:
   branch, ahead/behind, changed paths, worktrees, any open pull request. Reads only.
 - **`start`** — create the worktree for this task (branch `<prefix><slug>`, cut from
