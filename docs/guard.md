@@ -68,9 +68,11 @@ history other clones are built on:
 - history rewrites: `git filter-branch`, `git filter-repo`, `git update-ref`,
   `git symbolic-ref` writes, `git replace` (other than `-l`), `git reflog expire`,
   `git reset-index`, `git checkout-index`.
-- `git worktree remove --force`, `git submodule deinit --force`,
-  `git gc --prune=now`. Plain `git prune` and plain `git gc` run — they are
-  classified as ordinary writes, even though both delete unreachable objects.
+- `git worktree remove --force`, `git submodule deinit --force`, `git gc --prune=now`
+  and `git prune` — each deletes trees or objects that can be the only copy of work
+  nothing else remembers. `git gc`, `git repack` and `git prune -n` / `--dry-run`
+  run: plain `gc` leaves unreachable objects for git's own schedule, and a dry run
+  removes nothing.
 
 Each refusal says what is lost, not just "no", and names the ordinary way through
 where one exists.
