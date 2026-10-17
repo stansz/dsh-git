@@ -1,8 +1,8 @@
 # The guard
 
-What raw git in `bash` is refused; everything else that mentions git; and why this
-deployment has no git hooks. Part of [dsh-git](../README.md) — the overview, the
-settings and the requirements are there.
+What raw git in `bash` is refused or allowed, and what git hooks mean for the
+automatic commit. Part of [dsh-git](../README.md) — the overview, the settings and
+the requirements are there.
 
 The guard has **two rules**, and the first is the one the plugin exists for:
 
@@ -55,9 +55,10 @@ history other clones are built on:
   `--mixed` and a path-scoped reset leave the files alone and run.
 - `git clean` without `-n`/`--dry-run`. `git clean -n` prints and runs.
 - `git push --force`, `--force-with-lease`, `-f`, a `+refspec`, `--delete`,
-  `--mirror`. A rejected push is not a dead end: `git fetch origin`, `git rebase
-  origin/<branch>` and `git push` are all allowed, and that is the recovery the
-  reasons name.
+  `--mirror`. A rejected push is not a dead end, but the recovery goes through the
+  tool rather than around the guard: action `sync` brings the base in (with
+  `rebase: true` when the branch has to be replayed), then action `publish`
+  replaces this branch's own remote ref with `forceWithLease: true`.
 - `git branch -D` (force delete). `git branch -d` runs, because git itself
   refuses to delete an unmerged branch.
 - `git tag -f` (re-point an existing tag). Creating a tag and `git tag -d` run.
@@ -102,10 +103,10 @@ accepts even that.
 
 ## Modes
 
-`guardMode: off` disables the guard entirely; `warn` classifies and then allows
-everything, which makes it a diagnostic for seeing what a session reaches for — not a
-safer setting, because it drops the destructive denials with the rest. `redirect`
-is the default and the policy above.
+`guardMode: off` disables the guard entirely; `warn` runs the same classification
+and then allows everything, destructive commands included. Nothing reports the
+classification today, so `warn` is not a diagnostic you can read — treat it as the
+guard switched off. `redirect` is the default and the policy above.
 
 ## Git hooks
 
@@ -127,13 +128,12 @@ each exactly this:
 A hook like that pushes on every commit, **including automatic turn commits**, and
 it bypasses everything in this plugin's push path. They were removed on
 2026-10-05, superseded by the turn sync, which decides *whether* a branch may be
-pushed instead of pushing whatever `HEAD` happens to be. Backed up under
-`.dsh-hooks-removed/` in this workspace.
+pushed instead of pushing whatever `HEAD` happens to be.
 
 A global `core.hooksPath` pointing at such a hook would put it back in every
 repository at once.
 
-The specific hazard: `action "push"` refuses a protected branch, but a
+The specific hazard: `action "publish"` refuses a protected branch, but a
 `post-commit` hook that pushes `HEAD` does not know what branch it is on. A hook
 like the one above, installed globally, pushes `main` on every automatic commit —
 exactly the outcome the protected-branch rule exists to prevent. If you install a
