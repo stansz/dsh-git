@@ -24,9 +24,9 @@ Three tests are what actually matter, one per promise the plugin makes:
 1. **Turn sync commits.** Edit a file in a repository, run the turn sync, assert a
    commit exists on the branch.
 2. **Turn sync pushes.** The same, then assert the commit is on the remote.
-3. **Worktrees mode refuses an edit on `main`.** With `worktrees: true`, an edit
-   landing in a repository checked out on `main` is refused and points at
-   `action: "start"`.
+3. **Prune removes only what is disposable.** A `dsh/*` branch holding a commit the
+   base does not have is reported and kept; one with no commits of its own is removed
+   by `apply: true`, and never on a dry run.
 
 Anything beyond those three is plumbing. Plumbing tests are fine to have, but
 they should not be the only thing on offer — the old suite proved `isTaskBranch`

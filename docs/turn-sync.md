@@ -17,8 +17,6 @@ steps, and the order matters:
    mutating file operation;
 3. a scan for dirty repositories — **only** when `turnSyncScope: 'workspace'`.
 
-A worktree this session owns is always in scope.
-
 **When it runs.** Every tool call arms a settle timer. When the session has been
 quiet for a few seconds its edits have stopped, and the sync runs on its own, with
 no further tool call needed. A session in an unbroken burst of tool calls is still
@@ -34,9 +32,10 @@ use it for a single session working alone. Within a repository the session has
 established as its own, everything dirty is committed.
 
 **Turn push.** The commit is pushed when the branch is safe to push: a task branch
-under `branchPrefix`, or the branch of a worktree this session owns. `main` and
-`master` are never pushed automatically. A branch whose work is already in
-`origin/<base>` is not pushed either — that is what a merged task branch looks like.
+under `branchPrefix`, or — when nothing is protected — the branch in use. A branch
+named in `protectedBranches` is never pushed automatically. A branch whose work is
+already in `origin/<base>` is not pushed either — that is what a merged task branch
+looks like.
 
 What is never done: pushing a protected branch, pushing a branch the base already
 contains, committing during a merge, rebase or cherry-pick, committing more paths
@@ -115,7 +114,7 @@ whose subject starts `dsh: ` and names the files it contains, with
 `Assisted-by: DSH` in the body — or `dsh: turn <N> — <files>` when a real turn
 boundary supplied a number. Ending the turn is not what triggers it, and neither
 is the next tool call. On a protected branch the commit lands and the push is
-refused with a reason; on a `dsh/` worktree branch both happen. `git status` inside the plugin's own
+refused with a reason; on a `dsh/` branch both happen. `git status` inside the plugin's own
 repository is the fastest check, and `/git` prints the same state in the composer.
 
 The automatic commit is deliberately not narrowed to the files a turn edited.
@@ -130,22 +129,15 @@ have existed.
 Agent Teams puts several sessions in one filesystem, and this plugin is designed
 for that rather than around it.
 
-**Give each teammate its own worktree.** Because the session registry is keyed by
-session id, each teammate gets its own automatically:
+**Give each teammate its own checkout where you can.** A linked worktree per task is
+the cleanest isolation, and this bundle no longer creates one: creating, tracking and
+retiring them belongs to a separate worktree bundle. With one installed, a teammate
+works in its own worktree, commits and pushes its own `dsh/<slug>` branch, and
+integration becomes a real pull-request merge.
 
-1. the coordinator calls `git start` with a per-teammate slug;
-2. the task description carries the worktree's absolute path as the write scope;
-3. each teammate works, commits and pushes its own `dsh/<slug>` branch;
-4. integration becomes a real pull-request merge.
-
-Isolation is what makes this safe: a teammate's tree is invisible to everyone
-else's turn sync, so there is nothing for another session to sweep up. That is
-more deterministic than the shared-filesystem model Agent Teams otherwise
-assumes, not less.
-
-Nothing breaks if you skip that step either, because of `turnSyncScope: 'session'`
-— a teammate's uncommitted work in the shared checkout is simply not committed by
-anyone else, and `status` reports it until its owner commits it.
+Nothing breaks without one either, because of `turnSyncScope: 'session'` — a
+teammate's uncommitted work in the shared checkout is simply not committed by anyone
+else, and `status` reports it until its owner commits it.
 
 **The guard refuses mutating git in `bash`.** A team hits that often, and the
 answer is the tool rather than a prompt: every refusal names the action that does
@@ -160,5 +152,5 @@ second deadline, and a ten second staleness break so a killed writer cannot wedg
 lock that cannot be taken reports failure rather than writing unsynchronised). The
 automatic sync is serialized per session for the same reason: its triggers — the quiet
 period, the ceiling and the two turn boundaries — can land in the same window, and two
-runs over one worktree race the same index and the same ref. A trigger that arrives
+runs over one checkout race the same index and the same ref. A trigger that arrives
 during a run folds into exactly one follow-up, never dropped.

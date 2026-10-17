@@ -7,25 +7,21 @@
  * working trees and unpushed commits that nothing reported, because nothing was
  * looking.
  *
- * So this bundle contributes four things, and the last two are the ones that
+ * So this bundle contributes three things, and the last two are the ones that
  * matter:
  *
- *   ctx.tools.register()            the `git` tool: clone, init, fetch, branch,
- *                                   checkout, stash, status, start, commit,
- *                                   push, sync, pr, merge, finish, prune
+ *   ctx.tools.register()            the `git` tool: clone, init, status, save,
+ *                                   publish, sync, pr, merge, finish, prune
  *   ctx.commands.register()         /git, printing the same state to a human
  *   ctx.on('tools/pre-execute')     a guard that redirects raw mutating git
  *                                   in bash at the tool that does it cleanly,
  *                                   and refuses the commands that discard work
- *   ctx.on('tools/pre-execute')     worktree enforcement: with autoWorktree set,
- *                                   a file edit aimed at a protected branch is
- *                                   refused and pointed at action "start"
  *   ctx.on('agent/turn-stopping')   the automatic sync: at the end of every
  *                                   turn that changed files, commit them and
  *                                   push whatever is safe to push
  *
- * The third and fourth are deliberately not opt-in behaviours an agent has to
- * remember. An operation that must be remembered is the original bug.
+ * The last two are deliberately not opt-in behaviours an agent has to remember.
+ * An operation that must be remembered is the original bug.
  *
  * Every dependency is a `node:` builtin except `@deepseek-ai/schemastery`, which
  * is loaded defensively because a `link:` install does not hoist a bundle's
@@ -39,7 +35,6 @@ import { evaluate } from './lib/guard.mjs';
 import { render, summarize } from './lib/render.mjs';
 import { registerTurnSync } from './lib/turn-commit.mjs';
 import { registerSessionFiles } from './lib/session-files.mjs';
-import { registerWorktreeGuard } from './lib/worktree-guard.mjs';
 import { toplevel } from './lib/git.mjs';
 import { isAbsolute, resolve as resolvePath } from 'node:path';
 
@@ -125,11 +120,6 @@ export function apply(ctx, config) {
     'git command registration',
   );
 
-  // Enforcement first, then the recorder. Order matters and this is the reason:
-  // the recorder decides which repositories the turn end may commit, so a path
-  // that was refused must not have been recorded — otherwise the turn sync would
-  // commit a repository the session never actually changed.
-  registerWorktreeGuard(ctx, config, { cwdOf: (agent) => sessionCwd(ctx, agent), resolveConfig });
   registerGuard(ctx, config);
   // The disposer is registered rather than dropped. The sync arms a timer for the
   // quiet period that ends a turn, and a timer that outlived the plugin would
@@ -157,18 +147,6 @@ export function apply(ctx, config) {
     if (repoRoot === undefined) return undefined;
     return { repoRoot, path: absolute };
   });
-}
-
-/** The working directory of one agent's session, else the process directory. */
-function sessionCwd(ctx, agent) {
-  try {
-    const session = ctx.get?.('sessions')?.get?.(agent?.id);
-    const cwd = session?.header?.cwd ?? session?.cwd ?? session?.meta?.cwd;
-    if (typeof cwd === 'string' && cwd !== '') return cwd;
-  } catch {
-    /* fall through */
-  }
-  return process.cwd();
 }
 
 /** The directory a composer invocation is about: the agent's session, else the process. */
