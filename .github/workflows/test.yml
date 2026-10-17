@@ -1,0 +1,34 @@
+name: tests
+
+# The suite is Node's built-in test runner over a real git binary. It needs no
+# install step and no network: GitHub calls are answered by a local stand-in that
+# performs the merge in a bare repository the tests push to.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: dsh-git
+      # The bundle loads the shared core from a sibling directory, and the docs
+      # audit checks the other two repositories when they are present. Both are
+      # public, so a plain checkout is enough.
+      - uses: actions/checkout@v4
+        with:
+          repository: stansz/dsh-git-core
+          path: dsh-git-core
+      - uses: actions/checkout@v4
+        with:
+          repository: stansz/dsh-git-worktrees
+          path: dsh-git-worktrees
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run the suite
+        working-directory: dsh-git
+        run: node --test
