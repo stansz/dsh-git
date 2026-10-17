@@ -225,6 +225,7 @@ states it as `next:`, while for a push the note the turn ends with and the recor
 is present — `gh auth setup-git`. A *failure* is not remembered: the chain is asked
 again on the next call, so `gh auth login` in a terminal is picked up without
 restarting the Harness.
+
 [`docs/install.md`](docs/install.md#authentication-on-a-new-machine) is the
 checklist for a machine that has never logged in.
 
