@@ -138,7 +138,7 @@ Every other setting of this bundle is listed in the README, and each one is decl
   `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
   `@deepseek-ai/dsh-home-paths` uses. A machine that moves its Harness home does
   not get git state written to the old one.
-- **No machine path is baked in.** No static absolute imports, no `file://` imports,
+- **No machine path is baked in.** No static absolute imports, no baked `file://` path,
   no authoring-machine home, no `app.asar` reference. The core is found at runtime by
   the probes above.
 - **Every file it imports ships.** `package.json`'s `files` allowlist names
