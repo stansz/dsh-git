@@ -30,15 +30,11 @@ Install the dsh-git-core bundle beside this one. Tried: …
 **A `link:` install does not hoist a bundle's dependencies.** Node resolves a bare
 `import 'dsh-git-core/git.mjs'` from the importing file's real path — this workspace,
 not the profile's `node_modules` — so the plugin would fail to load even with the core
-installed. Each bundle avoids that with `lib/core-loader.mjs`, which tries, in order:
-
-1. `../dsh-git-core/lib/<name>` — the directory beside the bundle's own directory;
-2. `$DSH_PROFILE_DIR/node_modules/dsh-git-core/lib/<name>`;
-3. `dsh-git-core/lib/<name>` under the working directory;
-4. `node_modules/dsh-git-core/lib/<name>` under the working directory.
-
-When none of them has it, the error above is what the row fails with — a sentence that
-names what to install, which is the whole point of probing rather than importing.
+installed. Each bundle avoids that with `lib/core-loader.mjs`, which probes the sibling
+checkout, the profile's `node_modules` and the working directory; the `dsh-git-core`
+README lists the exact order. When none of them has it, the error above is what the row
+fails with — a sentence that names what to install, which is the point of probing
+rather than importing.
 
 `@deepseek-ai/schemastery` gets the same defensive treatment through `createRequire`
 probes over the module, the profile and the working directory. A profile that cannot
