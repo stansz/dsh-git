@@ -7,96 +7,123 @@ there.
 
 ## The two automatic behaviours
 
-**Turn commit.** At the end of every turn that changed a file, each touched
-repository is committed. *Which* repositories were touched is decided in three
-steps, and the order matters:
+**Turn commit.** At the end of a turn, each repository this session recorded work in
+is committed. *Which* repositories, and *which* paths inside them, is decided in three
+steps:
 
 1. the shipped `@deepseek-ai/dsh-workspace-changes` recorder's file list for that
-   turn, reconciled to repositories;
+   turn, reconciled to repositories, when the recorder can serve it;
 2. this session's own touched-path record, which the tools layer writes on every
-   mutating file operation;
+   mutating file operation — always consulted, never a last resort;
 3. a scan for dirty repositories — **only** when `turnSyncScope: 'workspace'`.
 
-**When it runs.** Every tool call arms a settle timer. When the session has been
-quiet for a few seconds its edits have stopped, and the sync runs on its own, with
-no further tool call needed. A session in an unbroken burst of tool calls is still
-committed every minute, so nothing is ever more than a minute away from a commit.
+Within a repository the commit is the **intersection** of two lists: the paths this
+session recorded, and the paths that are actually dirty. Everything else dirty is left
+where it is and named in the notice. Committing everything dirty was the earlier rule,
+and it published work nobody had chosen to publish: another agent's half-finished edit
+in the same checkout rode into this session's commit and its push. A path left behind is
+named until its owner commits it — visible and unattributed beats published and
+misattributed.
 
-The Host's own turn end — `session/event` carrying `turn/end`, and
-`agent/turn-stopping` where the deployment delivers it — runs the sync immediately.
-The timer covers the case where it does not.
+A path list that survives the intersection is committed under the configured message:
+`dsh: turn <N> — <paths>`, or `dsh: <paths>` when no turn number was reported, or
+`dsh: automatic commit` when there are no paths to name. The body carries
+`Assisted-by: DSH`. Above `turnCommitMaxFiles` changed paths the commit is skipped
+and the repository is reported instead.
 
-`turnSyncScope: 'session'` (the default) commits only repositories this session
-touched. `workspace` scans for any dirty repository under the working directory —
-use it for a single session working alone. Within a repository the session has
-established as its own, everything dirty is committed.
+**When it runs.** Three triggers, one sync at a time:
+
+- `agent/turn-stopping` — the awaited, agent-scoped turn close, which carries the turn
+  number and the agent's own abort signal;
+- `session/event` carrying `turn/end` — the same work reached from the session log,
+  because a listener that never receives the first event would fail silently;
+- the quiet period — every tool call arms a timer, and four seconds after the session's
+  edits stop the sync runs on its own, with no further tool call needed. A session in an
+  unbroken burst of tool calls is still committed every minute, which is the ceiling
+  under the timer.
+
+Whichever of the two boundaries arrives first wins for that (session, turn) and the
+other is a no-op. A trigger that lands while a sync is already running folds into
+exactly one follow-up run — deferred, never dropped, and never two runs over one
+checkout racing the same index and the same ref.
 
 **Turn push.** The commit is pushed when the branch is safe to push: a task branch
 under `branchPrefix`, or — when nothing is protected — the branch in use. A branch
 named in `protectedBranches` is never pushed automatically. A branch whose work is
 already in `origin/<base>` is not pushed either — that is what a merged task branch
-looks like.
+looks like, and pushing it is how a branch a merge had just removed came back on the
+remote.
 
 What is never done: pushing a protected branch, pushing a branch the base already
-contains, committing during a merge, rebase or cherry-pick, committing more paths
-than `turnCommitMaxFiles`, or pushing a repository that has no `origin` remote at
-all. That last one is not a failure — it is the shape of a repository with nowhere
-to push to — so it is skipped in silence rather than reported: a project started
-before it has a remote gets no notice and no backoff, and `status` still shows the
-branch and its commits. Action `push` asked for by hand says so directly instead
-(`no-remote`, with the `git remote add origin <url>` that fixes it).
+contains, committing during a merge, rebase or cherry-pick, committing a detached
+HEAD, committing more paths than `turnCommitMaxFiles`, or pushing a repository that
+has no `origin` remote at all. That last one is not a failure — it is the shape of a
+repository with nowhere to push to — so it is skipped in silence rather than reported:
+a project started before it has a remote gets no notice and no backoff, and `status`
+still shows the branch and its commits. Action `publish` asked for by hand says so
+directly instead (`no-remote`, with the `git remote add origin <url>` that fixes it).
 
 ## When the automatic sync cannot finish
 
-The turn sync is built so that declining to commit is never quiet — with one exception,
-and it is deliberate: `turnCommit: false` leaves the tree alone *by configuration*, and so
-says nothing. A configured outcome is not a skip to report, and naming the same tree every
-turn is the noise that trains a reader to skip the message that matters; `status` still shows
-it dirty. A skip,
-refused push, a timeout and an unexpected failure all produce a message the
-**model** reads — not only a Host log line. Every boundary reports this, including
-the tools-layer one that does most of the committing. It used to write its
-failures to a log file and to nobody else, which made "reported, not silent" true
-of the hooks that do the least work and false of the one that does the most:
+The turn sync is built so that declining to commit is never quiet — with two exceptions,
+and both are deliberate. `turnCommit: false` leaves the tree alone *by configuration*,
+and `turnPush: false` leaves the commits local *by configuration*. A configured outcome
+is not a skip to report, and naming the same tree every turn is the noise that trains a
+reader to skip the message that matters; `status` still shows it dirty and still shows
+the ahead count.
+
+Everything else a sync declines, refuses or fails produces a message the **model** reads
+— not only a Host log line. Every boundary reports this, including the quiet-period run
+that does most of the committing:
 
 ```
 dsh-git could not finish syncing your working tree:
-  - dsh-git: skipped the automatic commit: 340 changed paths, above the limit of 200
-Run the git tool with action "status" to see the current state, and action
-"commit" or action "push" to finish the work by hand.
+  - app: skipped the automatic commit: 340 of this session's changed paths, above the limit of 200
+Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-Declining to commit is not the only thing it reports. A repository that is dirty but
-that this session never changed is *left* uncommitted on purpose: with the default
-`turnSyncScope: "session"` the sync touches only repositories this session recorded,
-because committing somebody else's work in progress is worse than leaving it. What used
-to be silent is now said:
+A repository that is dirty but that this session never recorded is *left* uncommitted:
+with the default `turnSyncScope: "session"` the sync touches only repositories this
+session recorded, because committing somebody else's work in progress is worse than
+leaving it. What used to be silent is said:
 
 ```
-dsh-git could not finish syncing your working tree:
 dsh-git left 1 dirty repository uncommitted:
   - other-repo (/workspace/other-repo): dirty and never recorded by this session, so it was left uncommitted (turnSyncScope: "session")
-This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "commit") if it is yours, and leave it alone if it is not.
-Run the git tool with action "status" to see the current state, and action "commit" or action "push" to finish the work by hand.
+This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "save") if it is yours, and leave it alone if it is not.
+Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-Work written through `bash` is the case this exists for: the recorder only sees the file
-tools, so a repository changed that way and never touched again is exactly the one the
-sync has to mention rather than quietly skip.
+A repository that is dirty but that *some* session has recorded work in is not reported
+at all — it is a live sibling's work in progress, and `status` still shows it. Work
+written through `bash` is the case the left-alone report exists for: the recorder only
+sees the file tools, so a repository changed that way and never touched again is exactly
+the one the sync has to mention rather than quietly skip.
+
+Paths left behind inside a repository this session *did* commit are reported after the
+commit lands:
+
+```
+dsh-git could not finish syncing your working tree:
+  - app: left 3 unrecorded changed path(s) alone (a.mjs, b.mjs, c.mjs): commit them with the git tool (action "save" with `paths`) if they are yours.
+Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
+```
 
 A push that failed is reported the same way, with git's own words and — when a
-credential is what was missing — the sentence that says what to do about it. The
-same text is what `status` prints for the automatic push, because it is written
-into the failure record rather than added when it is displayed:
+credential is what was missing — the sentence that says what to do about it. The same
+text is what `status` prints for the automatic push, because it is written into the
+failure record rather than added when it is displayed:
 
 ```
 dsh-git could not finish syncing your working tree:
   - app: push failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled — git could not authenticate to the remote: this machine has no working credential for it. Run `gh auth setup-git` to let the gh CLI provide one, set a credential helper (on macOS that is `git config --global credential.helper osxkeychain`), or use an SSH remote. (attempt 1)
+Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-Only the credential-shaped failures get the extra sentence — `could not read
-Username`, `Authentication failed`, `Permission denied (publickey)` — and a network
-failure is passed through exactly as git wrote it.
+Only the credential-shaped failures get the extra sentence — `could not read Username`,
+`terminal prompts disabled`, `Authentication failed`, `Invalid username or token`,
+`Permission denied (publickey)` — and a network failure is passed through exactly as
+git wrote it. A push held back after earlier failures says so, with the attempt count.
 
 Reaching the model takes two steps, and both are deliberate: `agent.inject()`
 puts the text in its context, but does **not** wake it, so `agent.followup()` then
@@ -110,19 +137,12 @@ is noise, and noise is how a real message gets skipped.
 ## How to see the automatic commit work
 
 Make an edit in a repository and stop. A few seconds later `git log` shows a commit
-whose subject starts `dsh: ` and names the files it contains, with
-`Assisted-by: DSH` in the body — or `dsh: turn <N> — <files>` when a real turn
-boundary supplied a number. Ending the turn is not what triggers it, and neither
-is the next tool call. On a protected branch the commit lands and the push is
-refused with a reason; on a `dsh/` branch both happen. `git status` inside the plugin's own
-repository is the fastest check, and `/git` prints the same state in the composer.
-
-The automatic commit is deliberately not narrowed to the files a turn edited.
-Narrowing it would leave one file the turn touched and one it did not, both
-uncommitted, with no later turn likely to notice — and "nothing left
-uncommitted" is the promise this bundle exists to keep. The commit subject names
-the files, so the result stays attributable without claiming a turn that may not
-have existed.
+whose subject starts `dsh: ` and names the files it contains, with `Assisted-by: DSH`
+in the body — or `dsh: turn <N> — <files>` when a real turn boundary supplied a
+number. Ending the turn is not what triggers it, and neither is the next tool call. On
+a protected branch the commit lands and the push is refused with a reason; on a `dsh/`
+branch both happen. `git status` inside the plugin's own repository is the fastest
+check, and `/git` prints the same state in the composer.
 
 ## Running several sessions at once
 
@@ -130,20 +150,19 @@ Agent Teams puts several sessions in one filesystem, and this plugin is designed
 for that rather than around it.
 
 **Give each teammate its own checkout where you can.** A linked worktree per task is
-the cleanest isolation, and this bundle no longer creates one: creating, tracking and
-retiring them belongs to a separate worktree bundle. With one installed, a teammate
-works in its own worktree, commits and pushes its own `dsh/<slug>` branch, and
-integration becomes a real pull-request merge.
+the cleanest isolation, and this bundle does not create one: creating, tracking and
+retiring them belongs to the separate `dsh-git-worktrees` bundle. With that installed,
+a teammate works in its own worktree, commits and pushes its own `dsh/<slug>` branch,
+and integration becomes a real pull-request merge.
 
 Nothing breaks without one either, because of `turnSyncScope: 'session'` — a
 teammate's uncommitted work in the shared checkout is simply not committed by anyone
 else, and `status` reports it until its owner commits it.
 
-**The guard refuses mutating git in `bash`.** A team hits that often, and the
-answer is the tool rather than a prompt: every refusal names the action that does
-the same job. `guardMode: 'warn'` classifies and allows instead, which is useful
-for seeing what sessions reach for — but it drops the destructive denials too, so
-it is a diagnostic, not a team setting.
+**The guard redirects the everyday flow in `bash`.** A team hits that often, and the
+answer is the tool rather than a prompt: every refusal names the action that does the
+same job. `guardMode: 'warn'` allows everything instead, destructive commands included,
+so it is not a team setting.
 
 **Session state is written under a lock, one sync runs at a time.** Two OS processes
 writing one session file used to lose records — an entire process's worth in the measured
