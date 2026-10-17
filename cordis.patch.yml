@@ -2,11 +2,18 @@
 #
 # One inserted row. It mounts this package's Host half, which contributes:
 #
-#   ctx.tools.register()          -> the `git` tool (status, start, commit,
-#                                    push, sync, pr, merge, finish)
+# This package needs the dsh-git-core bundle installed beside it: lib/core-loader.mjs
+# resolves the shared library from the sibling directory or the profile's node_modules,
+# and fails with a sentence naming what is missing when neither has it.
+#
+#   ctx.tools.register()          -> the `git` tool (clone, init, status, save,
+#                                    publish, sync, pr, merge, finish, prune)
 #   ctx.commands.register()       -> /git
-#   ctx.on('tools/pre-execute')   -> the redirect guard for raw git in bash
-#   ctx.on('agent/turn-stopping') -> commit and push each turn's changes
+#   ctx.on('tools/pre-execute')   -> the guard for raw git in the shell, and the
+#                                    settle timer that ends a turn's edits
+#   ctx.on('agent/turn-stopping') -> commit the paths this session recorded, and
+#                                    push when the branch is safe
+#   ctx.on('session/event')       -> the same sync, from the log's turn/end
 #
 # The row id is unique to this bundle, so nothing shipped is overridden and no
 # base row's config has to be restated. Delete this entry to remove every
