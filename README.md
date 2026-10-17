@@ -24,25 +24,17 @@ configuration at all. They are listed under [Settings](#settings), and
 | `dsh-git` (this one) | github.com/stansz/dsh-git | The `git` tool, `/git`, the guard that redirects raw git in the shell, and the automatic commit and push at the turn boundary. |
 | [`dsh-git-worktrees`](https://github.com/stansz/dsh-git-worktrees) | github.com/stansz/dsh-git-worktrees | One git worktree per task: the `worktree` tool (`start`, `list`, `remove`) and the guard that refuses a file edit landing in a repository sitting on a protected branch. |
 
-**Install the core first.** `dsh-git-core` is a library, not a plugin — it registers
-nothing, so it contributes no row. It is still installable because the installer only
-treats a package as a bundle when it declares `dsh.bundle.patch`, and its patch is
-deliberately empty: one `[]`, no rows. Installing it is what puts it in the profile's
-`node_modules`, which is where the other two bundles look for it.
-
-A `link:` install does not hoist a bundle's dependencies, so a bare
-`import 'dsh-git-core/git.mjs'` cannot resolve from a checkout beside the profile.
-Each bundle loads the core through `lib/core-loader.mjs` instead, which probes the
-sibling directory next to the bundle, `$DSH_PROFILE_DIR/node_modules`, and the working
-directory. When none of them has it, the plugin fails at activation with a sentence
-that names what is missing — `dsh-git-core is not installed: could not load git.mjs …
-Install the dsh-git-core bundle beside this one` — rather than a bare
-`ERR_MODULE_NOT_FOUND`.
+**Install the core first.** `dsh-git-core` is a library, not a plugin: it registers
+nothing, and its bundle patch is a deliberately empty `[]`. Installing it puts it in
+the profile's `node_modules`, where the other two bundles find it through
+`lib/core-loader.mjs` — a `link:` install does not hoist dependencies, so a bare
+import cannot resolve.
 
 **Core plus `dsh-git` is the minimum** for the everyday flow: the tool, the guard and
-the automatic commit and push. `dsh-git-worktrees` is a separate bundle with its own
-settings (`worktreeRoot`, `autoWorktree`, `worktrees`); none of its settings exist on
-this bundle's row, and installing it is a choice, not a dependency.
+the automatic commit and push. `dsh-git-worktrees` is a separate, optional bundle with
+its own settings (`worktreeRoot`, `autoWorktree`, `worktrees`); none of those exist on
+this bundle's row. [`docs/install.md`](docs/install.md) has the full order, the loader's
+probe list, and the portability rules.
 
 ## Why this exists
 
@@ -155,8 +147,8 @@ This file is the overview. The detail lives beside it:
 
 | File | What is in it |
 |---|---|
-| [`docs/turn-sync.md`](docs/turn-sync.md) | the automatic half: what is committed and pushed, when it declines, and how to watch it |
-| [`docs/guard.md`](docs/guard.md) | what raw git in `bash` is refused or allowed, and what git hooks mean for automatic commits |
+| [`docs/turn-sync.md`](docs/turn-sync.md) | the automatic half: what is committed and pushed, when it declines, how git hooks interact with it, and how to watch it |
+| [`docs/guard.md`](docs/guard.md) | the guard's policy: what raw git in `bash` is refused or allowed, and why |
 | [`docs/install.md`](docs/install.md) | a fresh machine: three packages, the order they install in, and `link:` versus GitHub installs |
 
 ## Settings
@@ -165,7 +157,7 @@ Every setting has a working default; these are the ones worth knowing.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `stateRoot` | `~/.dsh/state` | Where session state is recorded: the repositories this session touched, and the push backoff |
+| `stateRoot` | `$DSH_HOME/state`, else `~/.dsh/state` | Where session state is recorded: the repositories this session touched, and the push backoff |
 | `branchPrefix` | `dsh/` | Task branch namespace; these are what automatic push may push, and what `prune` may remove |
 | `baseBranch` | *(empty)* | Empty resolves `origin/HEAD`, then `main` |
 | `protectedBranches` | `[]` | The plugin's own list of branch names, matched literally against the checked-out branch. Never pushed automatically. An explicit `[]` lets a `publish` to `main` through without `allowProtected` |
