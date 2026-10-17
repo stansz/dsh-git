@@ -102,28 +102,26 @@ of them.
 ## The guard
 
 Raw git in the shell is inspected before it runs, for the agent's tool calls only —
-it is a `tools/pre-execute` listener on `bash` and `pwsh`, so your own terminal is
-never touched by it. Three outcomes, and the middle one is the one this bundle exists
-for:
+a `tools/pre-execute` listener on `bash` and `pwsh` — so your own terminal is never
+touched. Three outcomes:
 
-- **The everyday flow is redirected.** `git add`, `commit`, `push`, `pull`,
-  `fetch` and `rebase` are refused, each naming the action that does the same job:
-  `save`, `publish`, `sync` (and `sync` with `rebase: true` for a replay). That is
-  what makes the same work happen the same way every turn.
-- **Work-loss is refused.** `reset --hard`/`--merge`/`--keep`, `clean`, a force
-  push, `branch -D`, `checkout -- <paths>`, `restore`, `stash drop`, and the history
-  rewrites. Each says what is lost.
-- **Everything else runs.** `config`, `remote`, `tag`, `stash`, `branch`,
-  `checkout`, `merge`, `clone`, `worktree`, reads and the rest. Setup and
-  maintenance are not the daily flow, and a guard that denies them is a wall — the
-  one that hurt most was `git config credential.helper`, the repair path for a machine
-  that cannot push. A dry run (`fetch --dry-run`, `push --dry-run`, `clean -n`) sends
-  nothing and runs.
+- **The everyday flow is redirected.** `git add`, `commit`, `push`, `pull`, `fetch`
+  and `rebase` are refused, each naming the action that does the same job: `save`,
+  `publish`, `sync` (and `sync` with `rebase: true` for a replay).
+- **Work-loss is refused.** `reset --hard`/`--merge`/`--keep`, `clean`, a force push,
+  `branch -D`, `checkout -- <paths>`, `restore`, `stash drop`, `tag -f`, the history
+  rewrites, and the object-deleting `gc --prune=now` and `git prune`. Each says what is
+  lost; `git prune -n`/`--dry-run` removes nothing and runs.
+- **Everything else runs.** Setup and maintenance — `config`, `remote`, `tag`,
+  `branch`, `checkout`, `merge`, `clone`, `worktree`, reads and the rest — are not
+  the daily flow, and denying them is how a guard becomes a wall (`git config
+  credential.helper` is the repair path for a machine that cannot push). A dry run
+  (`fetch --dry-run`, `push --dry-run`, `clean -n`) sends nothing and runs.
 
-Detection is best-effort and not a security boundary; it reads the command line's
-tokens and does not expand variables or run anything. `guardMode: warn` allows
-everything, destructive commands included. The full policy, the refusal list and the
-wrapper case are in [`docs/guard.md`](docs/guard.md).
+Detection is best-effort and not a security boundary: it reads the command line's
+tokens and expands nothing. `guardMode: warn` allows everything, destructive commands
+included, and reports nothing. The full refusal list, the override and wrapper cases,
+and the dry-run edge cases are in [`docs/guard.md`](docs/guard.md).
 
 ## The automatic half
 
