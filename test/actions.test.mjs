@@ -8,6 +8,7 @@
  */
 
 import { after, describe, test } from 'node:test';
+import { resolve } from 'node:path';
 import assert from 'node:assert/strict';
 
 import {
@@ -225,6 +226,36 @@ describe('save', () => {
     assert.deepEqual(result.paths, ['new-dir/new-file.txt']);
     assert.equal(gitOk(fx.work, ['show', 'HEAD:new-dir/new-file.txt']), 'work');
     assert.equal(gitOk(fx.work, ['status', '--porcelain']), '');
+  });
+
+  test('a write to a file in a directory that does not exist yet is recorded and committed', async () => {
+    const fx = fixture();
+    const cfg = config();
+    const sid = sessionId();
+    const listeners = [];
+    const ctx = {
+      on(event, listener) {
+        if (event === 'tools/pre-execute') listeners.push(listener);
+      },
+    };
+    const { registerSessionFiles } = await import('../lib/session-files.mjs');
+    const { toplevel } = await import('../lib/git.mjs');
+    // The recorder is what the Host asks before a file write, so its answer
+    // decides whether the automatic commit can ever see the file. It resolves
+    // the path while neither the file nor its directory exists.
+    registerSessionFiles(ctx, cfg, async (path) => {
+      const absolute = resolve(fx.work, path);
+      const repoRoot = await toplevel(absolute);
+      return repoRoot === undefined ? undefined : { repoRoot, path: absolute };
+    });
+    const exec = { name: 'write', arguments: { file_path: 'brand/new/dir/file.txt' }, agent: { id: sid } };
+    for (const listener of listeners) await listener(exec, async () => {});
+    writeFiles(fx.work, { 'brand/new/dir/file.txt': 'created in a new directory' });
+
+    const result = await action('save', { repo: fx.work }, { config: cfg, reference: fx.work, sessionId: sid });
+    assert.equal(result.committed, true, JSON.stringify(result));
+    assert.deepEqual(result.paths, ['brand/new/dir/file.txt']);
+    assert.equal(gitOk(fx.work, ['show', 'HEAD:brand/new/dir/file.txt']), 'created in a new directory');
   });
 
   test('explicit paths need no record and may include untracked files', async () => {
