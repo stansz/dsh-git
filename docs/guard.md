@@ -69,7 +69,8 @@ history other clones are built on:
   `git symbolic-ref` writes, `git replace` (other than `-l`), `git reflog expire`,
   `git reset-index`, `git checkout-index`.
 - `git worktree remove --force`, `git submodule deinit --force`,
-  `git gc --prune=now`, `git prune`.
+  `git gc --prune=now`. Plain `git prune` and plain `git gc` run — they are
+  classified as ordinary writes, even though both delete unreachable objects.
 
 Each refusal says what is lost, not just "no", and names the ordinary way through
 where one exists.
