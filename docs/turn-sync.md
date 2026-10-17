@@ -164,8 +164,9 @@ whose subject starts `dsh: ` and names the files it contains, with `Assisted-by:
 in the body — or `dsh: turn <N> — <files>` when a real turn boundary supplied a
 number. A few seconds of quiet is what runs the sync; a real turn boundary does the
 same work immediately, and a tool call only re-arms the timer. On a protected branch the
-commit lands and the push is refused with a reason; on a `dsh/` branch both happen. `git status` inside the plugin's own repository is the fastest
-check, and `/git` prints the same state in the composer.
+commit lands and the push is refused with a reason; on a `dsh/` branch both happen.
+`git status` inside the plugin's own repository is the fastest check, and `/git` prints
+the same state in the composer.
 
 ## Running several sessions at once
 
