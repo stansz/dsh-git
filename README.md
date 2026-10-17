@@ -70,7 +70,8 @@ of them.
 - **`init`** — create a new empty repository. `path` is where it lands, `branch`
   names the initial branch.
 - **`status`** — the state of a repository, or of every repository under a directory:
-  branch, ahead/behind, changed paths, worktrees, any open pull request. Reads only.
+  branch, ahead/behind, changed paths, worktrees, and the open pull request when asked
+  (`pull: true`). Reads only.
 - **`save`** — commit the work this session did here. With no `paths`, it commits
   exactly the files this session changed in this repository and reports the rest, so
   nothing of another session's is swept in. `paths` names files explicitly, `message`
@@ -87,11 +88,14 @@ of them.
   opens a second one.
 - **`merge`** — merge the pull request by number, or the one open for the current branch,
   then delete the remote branch it came from when that ref still points at the merged commit.
+  It fetches `origin` after a successful merge (`baseFetched` in the result), so a following
+  `prune` can prove what landed without an intervening `sync`; a failed fetch adds a note.
 - **`finish`** — the closing move for a unit of work: save anything dirty, publish, open or
   reuse the pull request, and report.
 - **`prune`** — dry-run then remove what this tool left behind: task branches that no
   worktree holds and that carry no commit of their own, plus branches a merged pull request
-  proves disposable. `apply: true` removes; a branch holding work is reported, never deleted.
+  proves disposable. `apply: true` removes; a branch holding work is reported rather than
+  deleted, unless you name it with `branches`.
 
 `/git` prints the same state to a human.
 
