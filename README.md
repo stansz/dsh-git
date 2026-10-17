@@ -235,6 +235,14 @@ status codes beat matching error prose — and because
 local branch cleanup in the *current* directory's repository, matching the branch
 by name only, which can delete an unrelated checkout's unpushed commits.
 
+## Tests
+
+`node --test` from the repository root: no install step, no network, no GitHub
+token. The tests build real repositories with the real git binary, drive the
+actions, and check the repository actual state afterwards; the GitHub API is a
+local stand-in that performs a real merge in a bare origin, so the pull-request
+workflow is exercised against real git refs. What each file pins, and what the
+fakes are allowed to fake, is in [`docs/testing.md`](docs/testing.md).
 ## Requirements
 
 git on `PATH`. `gh` is optional and only used as a token source; without it, set
