@@ -82,17 +82,25 @@ dsh-git could not finish syncing your working tree:
 Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-A repository that is dirty but that this session never recorded is *left* uncommitted:
-with the default `turnSyncScope: "session"` the sync touches only repositories this
-session recorded, because committing somebody else's work in progress is worse than
-leaving it. What used to be silent is said:
+A repository this session never recorded is *left* alone: with the default
+`turnSyncScope: "session"` the sync touches only repositories this session recorded,
+because committing somebody else's work in progress is worse than leaving it. What used
+to be silent is said — and "dirty" is not the only shape that matters, because a clean
+repository can hold commits that exist nowhere else:
 
 ```
-dsh-git left 1 dirty repository uncommitted:
+dsh-git left 2 repositories alone:
   - other-repo (/workspace/other-repo): dirty and never recorded by this session, so it was left uncommitted (turnSyncScope: "session")
-This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "save") if it is yours, and leave it alone if it is not.
+  - side-project (/workspace/side-project): has 1 unpushed commit(s) and was never recorded by this session, so it was left unpushed (turnSyncScope: "session")
+This session never recorded work there, so committing it could commit another session's work in progress. Commit it by hand with the git tool (action "save") if it is yours, push it with action "publish" if it only needs sending, and leave it alone if it is not.
 Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
+
+Two cases earn a line: a dirty tree, and a branch **ahead of its upstream**. The second
+exists because the guard lets `merge`, `revert`, `cherry-pick`, `apply` and `am` run in
+bash, and each can create a commit that leaves no dirty path behind. A branch with no
+upstream is not reported: it is unpublished by configuration, not unpushed, and nothing
+here can say where it would go.
 
 A repository that is dirty but that *some* session has recorded work in is not reported
 at all — it is a live sibling's work in progress, and `status` still shows it. Work
