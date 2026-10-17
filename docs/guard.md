@@ -1,8 +1,7 @@
 # The guard
 
-What raw git in `bash` is refused or allowed, and what git hooks mean for the
-automatic commit. Part of [dsh-git](../README.md) — the overview, the settings and
-the requirements are there.
+The guard's policy: what raw git in `bash` is refused or allowed. Part of
+[dsh-git](../README.md) — the overview, the settings and the requirements are there.
 
 The guard has **two rules**, and the first is the one the plugin exists for:
 
@@ -12,7 +11,8 @@ The guard has **two rules**, and the first is the one the plugin exists for:
    That is what makes the same work happen the same way every turn, instead of a
    fresh incantation each time.
 2. **Work is never discarded.** `reset --hard`, `clean`, a force push, `branch -D`,
-   `checkout -- <paths>`, `stash drop` and the history rewrites are refused.
+   `checkout -- <paths>`, `restore`, `stash drop`, `tag -f`, the history rewrites, and
+   the object-deleting `gc --prune=now`/`git prune` are refused.
 
 Everything else runs, apart from the destructive forms listed under [What is
 refused](#what-is-refused). Setup and maintenance — `config`, `remote`, `tag`,
@@ -21,14 +21,11 @@ gated: they are not the daily flow, and denying them is how a guard becomes a wa
 `git config credential.helper` is the repair path for a machine that cannot push,
 and it has no tool action to point at.
 
-The guard sees **the agent's tool calls only** — it is a `tools/pre-execute` listener
-on `bash` (and `pwsh`), so your own terminal is never affected by it. It is not a
-security boundary and never was (`gh`, `curl` and `node` reach the same API), so it
-does not pretend to be one.
-
-Detection is **best-effort, not a security boundary** — an obfuscated command can
-still get through, and that is documented in `lib/guard.mjs` rather than papered
-over. The guard grades **`git`** only.
+The guard sees **the agent's tool calls only** — a `tools/pre-execute` listener on
+`bash` (and `pwsh`) — so your own terminal is never affected. Detection is
+**best-effort, not a security boundary**: it grades **`git`** only and reads tokens,
+so an obfuscated command can still get through (`gh`, `curl` and `node` reach the
+same API anyway).
 
 | Command | Verdict |
 |---|---|
@@ -39,7 +36,6 @@ over. The guard grades **`git`** only.
 | `git reset --hard`, `git clean -fd`, `git push --force`, `git branch -D` | deny |
 | `git checkout -- <paths>`, `git restore <paths>`, `git stash drop` | deny |
 | `git filter-branch`, `git update-ref`, `git tag -f` | deny |
-
 
 ## What is refused
 
