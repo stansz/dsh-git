@@ -14,9 +14,10 @@ The guard has **two rules**, and the first is the one the plugin exists for:
 2. **Work is never discarded.** `reset --hard`, `clean`, a force push, `branch -D`,
    `checkout -- <paths>`, `stash drop` and the history rewrites are refused.
 
-Everything else runs. Setup and maintenance — `config`, `remote`, `tag`, `stash`,
-`branch`, `worktree`, `gc`, `submodule`, `lfs` — are deliberately **not** gated: they
-are not the daily flow, and denying them is how a guard becomes a wall.
+Everything else runs, apart from the destructive forms listed under [What is
+refused](#what-is-refused). Setup and maintenance — `config`, `remote`, `tag`,
+`stash`, `branch`, `worktree`, `gc`, `submodule`, `lfs` — are deliberately **not**
+gated: they are not the daily flow, and denying them is how a guard becomes a wall.
 `git config credential.helper` is the repair path for a machine that cannot push,
 and it has no tool action to point at.
 
@@ -39,12 +40,6 @@ over. The guard grades **`git`** only.
 | `git checkout -- <paths>`, `git restore <paths>`, `git stash drop` | deny |
 | `git filter-branch`, `git update-ref`, `git tag -f` | deny |
 
-| Class | Decision |
-|---|---|
-| read-only | allow |
-| the everyday flow (`add`, `commit`, `push`, `pull`, `fetch`, `rebase`) | deny, naming `save`, `publish` or `sync` |
-| every other write (`config`, `remote`, `tag`, `stash`, `branch`, `checkout`, `merge`, `clone`, `worktree`, …) | allow |
-| destructive (the list below) | deny |
 
 ## What is refused
 
