@@ -1,78 +1,154 @@
 # Installing on another machine
 
-What a fresh machine needs, and the difference between a `link:` install (this
-machine's checkouts) and a GitHub install (any machine). Part of
-[dsh-git](../README.md) — the overview, the settings and the requirements are there.
+Three packages and the order they go in, the difference between a `link:` install (this
+machine's checkouts) and a GitHub install (any machine), and the two traps that cost a
+restart to find. Part of [dsh-git](../README.md) — the overview, the settings and the
+requirements are there.
 
-The bundle is built to install anywhere:
+## The three packages
 
-- **It follows the deployment's home.** `$DSH_HOME` decides, then
-  `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
-  `@deepseek-ai/dsh-home-paths` uses. A machine that moves its Harness home does
-  not get git state written to the old one.
-- **No machine path is baked in.** No absolute imports, no `file://` imports, no
-  authoring-machine home, no `app.asar` reference.
-- **Every file it imports ships.** `package.json`'s `files` allowlist names
-  `index.js`, `lib/`, `locale/` and `icon.svg` — the whole runtime — and every import
-  in it is relative or a `node:` builtin, so an install carries what the entry points
-  load.
-- **It loads with nothing installed.** The one declared dependency is
-  `@deepseek-ai/schemastery`, and it is loaded through `createRequire` probes
-  rather than a static import, so the plugin mounts and works without it.
+| Package | Repository | What it contributes |
+|---|---|---|
+| `dsh-git-core` | github.com/stansz/dsh-git-core | The shared library: one place a git command is run, one state store, one recorder of the files a session changes. No tool, no command, no listener, no rows. |
+| `dsh-git` | github.com/stansz/dsh-git | The `git` tool, `/git`, the guard on raw git in the shell, and the automatic commit and push. |
+| `dsh-git-worktrees` | github.com/stansz/dsh-git-worktrees | The `worktree` tool and the guard that refuses a file edit landing in a repository on a protected branch. Optional. |
 
-Install on another Harness the way this profile already installs another bundle:
+**Install the core first.** `dsh-git-core` is a library, not a plugin: it registers
+nothing, so its bundle patch is deliberately empty — one `[]` and no rows. It is still
+installable because the installer only recognises a package as a bundle when it declares
+`dsh.bundle.patch`, and that is what makes installing it put the package in the
+profile's `node_modules`, where the other two bundles look for it.
+
+**A plugin bundle installed without the core fails at activation**, with a message that
+names the missing core rather than a bare `ERR_MODULE_NOT_FOUND`:
+
+```
+Error: dsh-git-core is not installed: could not load git.mjs from any of 4 locations.
+Install the dsh-git-core bundle beside this one. Tried: …
+```
+
+**A `link:` install does not hoist a bundle's dependencies.** Node resolves a bare
+`import 'dsh-git-core/git.mjs'` from the importing file's real path — this workspace,
+not the profile's `node_modules` — so the plugin would fail to load even with the core
+installed. Each bundle avoids that with `lib/core-loader.mjs`, which tries, in order:
+
+1. `../dsh-git-core/lib/<name>` — the directory beside the bundle's own directory;
+2. `$DSH_PROFILE_DIR/node_modules/dsh-git-core/lib/<name>`;
+3. `dsh-git-core/lib/<name>` under the working directory;
+4. `node_modules/dsh-git-core/lib/<name>` under the working directory.
+
+When none of them has it, the error above is what the row fails with — a sentence that
+names what to install, which is the whole point of probing rather than importing.
+
+`@deepseek-ai/schemastery` gets the same defensive treatment through `createRequire`
+probes over the module, the profile and the working directory. A profile that cannot
+resolve it still mounts, with every setting at its default.
+
+**The minimum for the everyday flow is `dsh-git-core` plus `dsh-git`** — the tool, the
+guard, and the automatic commit and push. `dsh-git-worktrees` is a separate bundle with
+its own settings (`worktreeRoot`, `autoWorktree`, `worktrees`); if you install it, it
+needs the core too.
+
+## Install
 
 ```bash
 # The profile directory is the install target, not a global prefix:
 mkdir -p ~/.dsh/profiles/<name> && cd ~/.dsh/profiles/<name>
-pnpm add github:stansz/dsh-git
+pnpm add github:stansz/dsh-git-core          # the library, first
+pnpm add github:stansz/dsh-git               # the git tool, guard and turn sync
+pnpm add github:stansz/dsh-git-worktrees     # optional: one worktree per task
 ```
 
-**What an unpinned install gets you.** `github:stansz/dsh-git` follows the default branch,
-so a fresh install on another machine gets whatever `main` is at that moment. That is the
-right default for a second machine of your own, and it is why installing this needs no
-release step.
+Then list the bundles in that profile's own `package.json`, core first:
 
-An install that already exists does **not** follow along by itself: the resolved commit is
-written into that profile's `pnpm-lock.yaml`, and `pnpm install` keeps it. To move that
-machine to the current `main`, run `pnpm update dsh-git` there and restart the Harness.
-
-**When you want a name rather than a date.** The tag `latest` exists on the repository,
-but CI is currently disabled so nothing moves it automatically. Pin a commit or use the
-default branch:
-
-```bash
-pnpm add github:stansz/dsh-git#latest
+```json
+"dsh": { "profile": { "bundles": ["…", "dsh-git-core", "dsh-git"] } }
 ```
 
-`latest` is the one tag here that is *meant* to move. To freeze a state instead, pin a
-commit — a branch, a tag or a commit sha all work after the `#`:
+`plugin_manager` with `install_bundle` does the dependency and the bundle-list entry
+together and is what to prefer when it is available. The row inside the package needs no
+editing: it names `dsh-git`, which resolves from the profile's `node_modules` once the
+dependency is installed.
+
+**What an unpinned install gets you.** `github:stansz/dsh-git` follows the default
+branch, so a fresh install on another machine gets whatever `main` is at that moment.
+That is the right default for a second machine of your own, and it is why installing this
+needs no release step. An install that already exists does **not** follow along by
+itself: the resolved commit is written into that profile's `pnpm-lock.yaml`, and
+`pnpm install` keeps it. To move that machine to the current `main`, run
+`pnpm update dsh-git` there and restart the Harness. To freeze a state instead, pin a
+ref after `#` — a branch, a tag or a commit sha all work:
 
 ```bash
 pnpm add github:stansz/dsh-git#7bcd905     # any commit, frozen
 ```
 
-Version tags (`v0.2.0`) would be the third option, and they would never move — but there
-are none yet, and a version nothing releases is a promise nothing keeps. Add them on the
-day somebody other than you installs this, or the day you would write a changelog; the
-`latest` job does not conflict with that.
+## Enabling a row that is disabled in the profile patch
 
-Then make the profile load the bundle — one line in its own `package.json`:
+A bundle can insert its row disabled, and a profile can turn one off. Either way, the row
+is enabled by naming its id in the profile's own patch layer,
+`~/.dsh/profiles/<name>/cordis.patch.yml`:
 
-```json
-"dsh": { "profile": { "bundles": ["…", "dsh-git"] } }
+```yaml
+- id: dsh-git
+  disabled: false
 ```
 
-`plugin_manager` with `install_bundle` does the dependency and the bundle-list
-entry together and is what to prefer when it is available. The row inside the
-package needs no editing: it names `dsh-git`, which resolves from the profile's
-`node_modules` once the dependency is installed.
+The row keeps the name and the contents it came from in the bundle layer; the profile
+entry only turns it on, so nothing has to be restated. `disabled: true` in the same
+place turns one off. Either change is read when the plugin mounts, so it needs a restart.
 
-Finally, set that machine's guard mode, branch prefix and protected branches by overriding
-this bundle's row in the profile's own patch layer — the same place every other row is
-configured. It is read when the plugin mounts, so a change needs a restart. There is no
-Configure page, on purpose: the README says what the one that existed did to a
-hand-maintained file. Until the row is overridden, every setting keeps its default.
+This bundle's own patch inserts its row enabled, so there is nothing to switch on after a
+normal install.
+
+## A setting the schema no longer declares
+
+This one is a mount failure rather than a warning, and the symptom is a bundle that looks
+broken at startup. A row in the profile patch that carries settings the bundle's schema
+does not declare can fail when the plugin mounts. In this workspace the shape that does
+it is the `dsh-git` row, left over from when worktrees were part of this bundle:
+
+```yaml
+- id: dsh-git
+  name: 'dsh-git'
+  config:
+    worktreeRoot: /path/to/checkouts   # removed from this bundle's schema
+    worktrees: false                   # removed from this bundle's schema
+    turnSyncScope: workspace
+```
+
+`worktreeRoot` and `worktrees` are fields of `dsh-git-worktrees` now, not of
+`dsh-git`. The fix is to delete them from the `dsh-git` row and, if you use that
+bundle, declare them on its row instead:
+
+```yaml
+- id: dsh-git
+  name: 'dsh-git'
+  config:
+    turnSyncScope: workspace
+- id: dsh-git-worktrees
+  name: 'dsh-git-worktrees'
+  config:
+    worktreeRoot: /path/to/checkouts
+    autoWorktree: protected
+```
+
+Every other setting of this bundle is listed in the README, and each one is declared in
+`lib/config.mjs`; a name that is not there is a name to remove, not to keep.
+
+## Nothing here is machine-specific
+
+- **It follows the deployment's home.** `$DSH_HOME` decides, then
+  `$DSH_PROFILE_DIR`'s parent, then `~/.dsh` — the same resolution the shipped
+  `@deepseek-ai/dsh-home-paths` uses. A machine that moves its Harness home does
+  not get git state written to the old one.
+- **No machine path is baked in.** No static absolute imports, no `file://` imports,
+  no authoring-machine home, no `app.asar` reference. The core is found at runtime by
+  the probes above.
+- **Every file it imports ships.** `package.json`'s `files` allowlist names
+  `index.js`, `lib/`, `locale/`, `docs/`, `cordis.patch.yml`, `icon.svg`,
+  `LICENSE` and `README.md`, and every import is a `node:` builtin, a relative path
+  inside the package, or the core resolved through `lib/core-loader.mjs`.
 
 Nothing here is machine-specific: `git` and the optional `gh` are the only
 external tools, authentication comes from that machine's own credential helper,
@@ -129,7 +205,7 @@ does anything at all. A `github:` install writes a copy into the profile's
 it keeps whatever the last install resolved.
 
 **Use `github:` for every other machine.** There is nothing to edit there, and a
-pinned ref (`#v0.1.0`) is the only version of "this is what I tested" that a second
+pinned ref (`#7bcd905`) is the only version of "this is what I tested" that a second
 machine can reproduce.
 
 The trap is a profile that mixes them, because it looks uniform and is not: one
