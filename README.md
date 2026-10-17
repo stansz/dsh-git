@@ -13,8 +13,8 @@ pnpm add github:stansz/dsh-git
 ```
 
 Every setting has a working default, so it mounts and does something useful with no
-configuration at all. The ones worth changing are in
-[Changing a setting](#changing-a-setting).
+configuration at all. They are listed under [Settings](#settings), and
+[Changing a setting](#changing-a-setting) shows how to override one.
 
 ## Three packages, three repositories
 
@@ -142,7 +142,8 @@ The commit is pushed when the branch is safe to push: one under `branchPrefix`, 
 the branch in use when nothing is protected. A protected branch is never pushed
 automatically, and a branch whose work is already in the base is not pushed either.
 A skip, a refused push or a failure is written into the model's context and wakes it,
-so a sync that declined to commit is never silent.
+so a sync that declined to commit is not silent — unless leaving the tree alone is what
+the settings asked for.
 
 Detail, including the exact notices: [`docs/turn-sync.md`](docs/turn-sync.md).
 
