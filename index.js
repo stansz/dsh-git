@@ -17,15 +17,17 @@
  *                                   in bash at the tool that does it cleanly,
  *                                   and refuses the commands that discard work
  *   ctx.on('agent/turn-stopping')   the automatic sync: at the end of every
- *                                   turn that changed files, commit them and
- *                                   push whatever is safe to push
+ *                                   turn, commit the paths this session recorded
+ *                                   and push whatever is safe to push
  *
  * The last two are deliberately not opt-in behaviours an agent has to remember.
  * An operation that must be remembered is the original bug.
  *
- * Every dependency is a `node:` builtin except `@deepseek-ai/schemastery`, which
- * is loaded defensively because a `link:` install does not hoist a bundle's
- * dependencies and a static import would take the plugin down at activation.
+ * The shared core lives in `dsh-git-core` and is loaded through
+ * `lib/core-loader.mjs`, and `@deepseek-ai/schemastery` through `createRequire`
+ * probes — the same reason in both cases: a `link:` install does not hoist a
+ * bundle's dependencies, so a static import would take the plugin down at
+ * activation instead of mounting it.
  */
 
 import { createGitTool, sessionDirectory } from './lib/tool.mjs';
@@ -166,14 +168,13 @@ function commandDirectory(ctx, invocation) {
  *
  * A `tools/pre-execute` listener rather than `ctx.tools.guard()`, and that is
  * forced rather than stylistic: a guard is synchronous and can only deny, while
- * this decision has to be able to ask the user and to explain which action to
- * use instead. Asking is also what makes the guard tolerable — a hard denial on
- * every `git commit` is a guard users switch off, and a switch-off guard protects
- * nothing.
+ * this decision has to explain which action does the same job instead. Naming it
+ * is what makes the guard something a session routes through rather than around —
+ * a bare denial on every `git commit` is a guard users switch off, and a
+ * switch-off guard protects nothing.
  *
- * The classification itself lives in `lib/guard.mjs` as a pure function, because
- * a decision that cannot be tested apart from the Host is a decision nobody
- * tests. Everything here is the Host wiring around it.
+ * The classification itself lives in `lib/guard.mjs` as a pure function, apart
+ * from the Host wiring here.
  */
 function registerGuard(ctx, config) {
   ctx.on('tools/pre-execute', async (exec, next) => {
