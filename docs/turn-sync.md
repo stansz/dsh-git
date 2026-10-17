@@ -142,6 +142,21 @@ from never sending it.
 A *successful* sync announces nothing. Saying "committed and pushed" every turn
 is noise, and noise is how a real message gets skipped.
 
+## Git hooks
+
+The plugin commits through ordinary `git commit` and does not pass `--no-verify`,
+so every hook the repository has installed — `pre-commit`, `commit-msg`,
+`post-commit`, and a global `core.hooksPath` — runs on automatic commits too.
+
+That matters most for `post-commit`, which runs after the commit exists and can do
+anything. A `post-commit` that pushes `HEAD` bypasses this sync's decisions, including
+the protected-branch rule: installed globally, it pushes `main` on every automatic
+commit. If you install a global `core.hooksPath`, check what its `post-commit` does
+first.
+
+A hook that refuses a commit is reported as a skip, not worked around: a rejecting
+hook is a policy, and stepping over it silently would be worse.
+
 ## How to see the automatic commit work
 
 Make an edit in a repository and stop. A few seconds later `git log` shows a commit

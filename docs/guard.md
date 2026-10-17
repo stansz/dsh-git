@@ -106,37 +106,3 @@ and then allows everything, destructive commands included. Nothing reports the
 classification today, so `warn` is not a diagnostic you can read — treat it as the
 guard switched off. `redirect` is the default and the policy above.
 
-## Git hooks
-
-The plugin commits through ordinary `git commit` and does **not** pass
-`--no-verify`, so every hook that repository has installed runs on automatic
-commits too — `pre-commit`, `commit-msg`, `post-commit`, and a global
-`core.hooksPath`, if one is set.
-
-That matters most for `post-commit`, because it runs *after* the commit exists
-and can do anything. This workspace used to have five of them — one per bundle —
-each exactly this:
-
-```
-<repo>/.git/hooks/post-commit:
-    #!/bin/sh
-    git push origin HEAD
-```
-
-A hook like that pushes on every commit, **including automatic turn commits**, and
-it bypasses everything in this plugin's push path. They were removed on
-2026-10-05, superseded by the turn sync, which decides *whether* a branch may be
-pushed instead of pushing whatever `HEAD` happens to be.
-
-A global `core.hooksPath` pointing at such a hook would put it back in every
-repository at once.
-
-The specific hazard: `action "publish"` refuses a protected branch, but a
-`post-commit` hook that pushes `HEAD` does not know what branch it is on. A hook
-like the one above, installed globally, pushes `main` on every automatic commit —
-exactly the outcome the protected-branch rule exists to prevent. If you install a
-global `core.hooksPath`, check what its `post-commit` does first.
-
-Hooks are also deliberately allowed to fail the commit. When one does, the sync
-reports it like any other skip rather than working around it: a hook that rejects
-a commit is a policy, and stepping over it silently would be worse.
