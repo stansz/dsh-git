@@ -156,11 +156,11 @@ and every path resolves against that deployment's own `$DSH_HOME`.
 
 ## Authentication on a new machine
 
-Two independent credentials, and a new machine usually has only the first:
+Two independent credentials, and reading needs neither of them — which is why a fresh
+machine looks healthy right up to its first push:
 
 - **Reading needs nothing.** `git fetch`, and so this plugin's `sync`, works on a
-  public repository with no credential at all — which is why a fresh machine looks
-  healthy right up to its first push.
+  public repository with no credential at all.
 - **Writing needs that machine's own git credential.** This plugin passes `HOME`
   and `PATH` through to git, and disables prompting (`GIT_TERMINAL_PROMPT=0`, and no
   askpass), because a question with nobody to answer it would hang the call. Set one

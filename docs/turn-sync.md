@@ -117,21 +117,21 @@ dsh-git could not finish syncing your working tree:
 Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-A push that failed is reported the same way, with git's own words and — when a
-credential is what was missing — the sentence that says what to do about it. The same
-text is what `status` prints for the automatic push, because it is written into the
-failure record rather than added when it is displayed:
+A push that failed is reported the same way — in git's own words, plus the next step
+when there is one. The same text is what `status` prints for the automatic push, because
+it is written into the failure record rather than added when it is displayed:
 
 ```
 dsh-git could not finish syncing your working tree:
-  - app: push failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled — git could not authenticate to the remote: this machine has no working credential for it. Run `gh auth setup-git` to let the gh CLI provide one, set a credential helper (on macOS that is `git config --global credential.helper osxkeychain`), or use an SSH remote. (attempt 1)
+  - app: push failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled — git could not authenticate to the remote: this machine has no working credential for it. Use an SSH remote, or set a credential helper for HTTPS — on macOS `git config --global credential.helper osxkeychain`, on Linux `libsecret` or `cache` — and authenticate once in a terminal; neither needs anything installed. The GitHub CLI is optional here: if it is present, `gh auth setup-git` does the helper half. (attempt 1)
 Run the git tool with action "status" to see the current state, and action "save" or action "publish" to finish the work by hand.
 ```
 
-Only the credential-shaped failures get the extra sentence — `could not read Username`,
-`terminal prompts disabled`, `Authentication failed`, `Invalid username or token`,
-`Permission denied (publickey)` — and a network failure is passed through exactly as
-git wrote it. A push held back after earlier failures says so, with the attempt count.
+Credential-shaped failures — `could not read Username`, `terminal prompts disabled`,
+`Authentication failed`, `Invalid username or token`, `Permission denied (publickey)` —
+get that extra sentence; a rejected push names the fetch/rebase route and an unreachable
+remote names the network. Anything else is passed through exactly as git wrote it. A push
+held back after earlier failures says so, with the attempt count.
 
 Reaching the model takes two steps, and both are deliberate: `agent.inject()`
 puts the text in its context, but does **not** wake it, so `agent.followup()` then
@@ -162,9 +162,9 @@ hook is a policy, and stepping over it silently would be worse.
 Make an edit in a repository and stop. A few seconds later `git log` shows a commit
 whose subject starts `dsh: ` and names the files it contains, with `Assisted-by: DSH`
 in the body — or `dsh: turn <N> — <files>` when a real turn boundary supplied a
-number. Ending the turn is not what triggers it, and neither is the next tool call. On
-a protected branch the commit lands and the push is refused with a reason; on a `dsh/`
-branch both happen. `git status` inside the plugin's own repository is the fastest
+number. A few seconds of quiet is what runs the sync; a real turn boundary does the
+same work immediately, and a tool call only re-arms the timer. On a protected branch the
+commit lands and the push is refused with a reason; on a `dsh/` branch both happen. `git status` inside the plugin's own repository is the fastest
 check, and `/git` prints the same state in the composer.
 
 ## Running several sessions at once
@@ -182,10 +182,9 @@ Nothing breaks without one either, because of `turnSyncScope: 'session'` — a
 teammate's uncommitted work in the shared checkout is simply not committed by anyone
 else, and `status` reports it until its owner commits it.
 
-**The guard redirects the everyday flow in `bash`.** A team hits that often, and the
-answer is the tool rather than a prompt: every refusal names the action that does the
-same job. `guardMode: 'warn'` allows everything instead, destructive commands included,
-so it is not a team setting.
+**The guard redirects the everyday flow in `bash`.** The answer in a team is the tool,
+not a prompt: every refusal names the action that does the same job. (`guardMode: 'warn'`
+allows everything instead, so it is not a team setting; see [guard.md](guard.md).)
 
 **Session state is written under a lock, one sync runs at a time.** Two OS processes
 writing one session file used to lose records — an entire process's worth in the measured
