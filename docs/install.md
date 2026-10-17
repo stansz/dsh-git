@@ -219,7 +219,8 @@ expensive mistake is to edit, see no change, and go hunting for a defect that is
 not there.
 
 The entire `dsh.*` custom-work set in this workspace uses absolute `link:` paths,
-recorded as Known trap #1 in `docs/WHAT-WE-BUILT.md` — a fresh machine must use
+recorded as Known trap #1 in the workspace's `docs/WHAT-WE-BUILT.md`
+(`../../docs/WHAT-WE-BUILT.md` from here) — a fresh machine must use
 Git installs instead. That trap is about *deployment*. It is not an argument
 against `link:` while you are the one doing the developing.
 
